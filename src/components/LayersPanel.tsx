@@ -174,6 +174,41 @@ export function LayersPanel() {
                 />
               </div>
 
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <label style={{ color: '#aaa', fontSize: '11px' }}>
+                  Line Width (mm):
+                </label>
+                <input
+                  type="number"
+                  value={layer.strokeWidth}
+                  onChange={(e) =>
+                    updateLayer(layer.id, {
+                      strokeWidth: parseFloat(e.target.value) || 0.3,
+                    })
+                  }
+                  min="0.1"
+                  max="5"
+                  step="0.1"
+                  style={{
+                    width: '60px',
+                    padding: '4px',
+                    backgroundColor: '#333',
+                    border: '1px solid #555',
+                    borderRadius: '3px',
+                    color: 'white',
+                    fontSize: '11px',
+                  }}
+                />
+              </div>
+
               <div style={{ fontSize: '11px', color: '#888' }}>
                 {layer.flowPaths.length} FlowPaths,{' '}
                 {layer.standaloneGenerators.length} Standalone

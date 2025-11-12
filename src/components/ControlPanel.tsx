@@ -1,8 +1,16 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { exportAllLayers, saveProject } from '../core/export';
+import { exportAllLayers, saveProject, loadProject } from '../core/export';
 import { PAPER_FORMATS } from '../types/formats';
 import type { FormatType } from '../types/formats';
+import {
+  saveProjectToLocalStorage,
+  listSavedProjects,
+  loadProjectFromLocalStorage,
+  deleteProjectFromLocalStorage,
+  getStorageInfo,
+  type SavedProject,
+} from '../core/storage';
 
 export function ControlPanel() {
   const project = useStore((state) => state.project);
@@ -14,8 +22,14 @@ export function ControlPanel() {
   const setGlobalSeed = useStore((state) => state.setGlobalSeed);
   const regenerateSeed = useStore((state) => state.regenerateSeed);
   const setBackgroundImage = useStore((state) => state.setBackgroundImage);
+  const loadProjectToStore = useStore((state) => state.loadProject);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const projectLoadRef = useRef<HTMLInputElement>(null);
+
+  const [showProjectBrowser, setShowProjectBrowser] = useState(false);
+  const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
+  const [projectName, setProjectName] = useState('Untitled Project');
 
   const handleFormatChange = (format: FormatType) => {
     setPaperFormat(format);
@@ -42,6 +56,60 @@ export function ControlPanel() {
   const handleSaveProject = () => {
     saveProject(project, 'mixdraw-project.json');
     console.log('Project saved as JSON');
+  };
+
+  const handleSaveToLocalStorage = () => {
+    try {
+      const name = projectName || 'Untitled Project';
+      saveProjectToLocalStorage(project, name);
+      alert(`Project "${name}" saved successfully!`);
+    } catch (error) {
+      alert('Failed to save project: ' + (error as Error).message);
+    }
+  };
+
+  const handleLoadFromLocalStorage = () => {
+    setSavedProjects(listSavedProjects());
+    setShowProjectBrowser(true);
+  };
+
+  const handleLoadProject = (saved: SavedProject) => {
+    if (confirm(`Load project "${saved.name}"? Current work will be lost.`)) {
+      loadProjectToStore(saved.project);
+      setProjectName(saved.name);
+      setShowProjectBrowser(false);
+      console.log(`✅ Loaded project: ${saved.name}`);
+    }
+  };
+
+  const handleDeleteProject = (id: string, name: string) => {
+    if (confirm(`Delete project "${name}"? This cannot be undone.`)) {
+      deleteProjectFromLocalStorage(id);
+      setSavedProjects(listSavedProjects());
+    }
+  };
+
+  const handleLoadFromFile = () => {
+    projectLoadRef.current?.click();
+  };
+
+  const handleFileLoad = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const loadedProject = await loadProject(file);
+      if (confirm(`Load project from file? Current work will be lost.`)) {
+        loadProjectToStore(loadedProject);
+        setProjectName(file.name.replace('.json', ''));
+        console.log('✅ Project loaded from file');
+      }
+    } catch (error) {
+      alert('Failed to load project: ' + (error as Error).message);
+    }
+
+    // Reset input
+    e.target.value = '';
   };
 
   const handleBackgroundUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,6 +159,25 @@ export function ControlPanel() {
       <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold' }}>
         Project Controls
       </h4>
+
+      {/* Project Name */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ fontSize: '12px', color: '#aaa' }}>Project Name</label>
+        <input
+          type="text"
+          value={projectName}
+          onChange={(e) => setProjectName(e.target.value)}
+          placeholder="Untitled Project"
+          style={{
+            padding: '8px',
+            backgroundColor: '#1a1a1a',
+            color: 'white',
+            border: '1px solid #555',
+            borderRadius: '4px',
+            fontSize: '13px',
+          }}
+        />
+      </div>
 
       {/* Paper Format Selector */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -231,6 +318,85 @@ export function ControlPanel() {
 
       <div style={{ borderTop: '1px solid #444', margin: '4px 0' }} />
 
+      {/* Save/Load Controls */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <button
+          onClick={handleSaveToLocalStorage}
+          style={{
+            padding: '10px 12px',
+            backgroundColor: '#2d9c5e',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '13px',
+            fontWeight: 'bold',
+          }}
+        >
+          💾 Save to Browser
+        </button>
+
+        <button
+          onClick={handleLoadFromLocalStorage}
+          style={{
+            padding: '10px 12px',
+            backgroundColor: '#4a9eff',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '13px',
+            fontWeight: 'bold',
+          }}
+        >
+          📂 Load from Browser
+        </button>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={handleSaveProject}
+            style={{
+              flex: 1,
+              padding: '8px 10px',
+              backgroundColor: '#3a3a3a',
+              color: 'white',
+              border: '1px solid #555',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+            }}
+          >
+            💾 Save File
+          </button>
+
+          <button
+            onClick={handleLoadFromFile}
+            style={{
+              flex: 1,
+              padding: '8px 10px',
+              backgroundColor: '#3a3a3a',
+              color: 'white',
+              border: '1px solid #555',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+            }}
+          >
+            📁 Load File
+          </button>
+        </div>
+
+        <input
+          ref={projectLoadRef}
+          type="file"
+          accept=".json"
+          onChange={handleFileLoad}
+          style={{ display: 'none' }}
+        />
+      </div>
+
+      <div style={{ borderTop: '1px solid #444', margin: '4px 0' }} />
+
       {/* Export Controls */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <button
@@ -247,22 +413,6 @@ export function ControlPanel() {
           }}
         >
           📤 Export All Layers (SVG)
-        </button>
-
-        <button
-          onClick={handleSaveProject}
-          style={{
-            padding: '10px 12px',
-            backgroundColor: '#2d9c5e',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '13px',
-            fontWeight: 'bold',
-          }}
-        >
-          💾 Save Project (JSON)
         </button>
       </div>
 
@@ -285,6 +435,175 @@ export function ControlPanel() {
           Standalone: {project.layers.reduce((sum, l) => sum + l.standaloneGenerators.length, 0)}
         </div>
       </div>
+
+      {/* Project Browser Modal */}
+      {showProjectBrowser && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setShowProjectBrowser(false)}
+        >
+          <div
+            style={{
+              backgroundColor: '#2a2a2a',
+              borderRadius: '8px',
+              padding: '20px',
+              maxWidth: '600px',
+              width: '90%',
+              maxHeight: '80vh',
+              overflow: 'auto',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '16px',
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: '18px', color: 'white' }}>
+                Saved Projects ({savedProjects.length})
+              </h3>
+              <button
+                onClick={() => setShowProjectBrowser(false)}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: '#444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {savedProjects.length === 0 ? (
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '40px 20px',
+                  color: '#888',
+                  fontSize: '14px',
+                }}
+              >
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>📁</div>
+                <div>No saved projects yet</div>
+                <div style={{ fontSize: '12px', marginTop: '8px' }}>
+                  Save your current project to get started
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {savedProjects.map((saved) => (
+                  <div
+                    key={saved.id}
+                    style={{
+                      padding: '16px',
+                      backgroundColor: '#1a1a1a',
+                      borderRadius: '6px',
+                      border: '1px solid #444',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          color: 'white',
+                          marginBottom: '8px',
+                        }}
+                      >
+                        {saved.name}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>
+                        {new Date(saved.timestamp).toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#666' }}>
+                        {saved.project.layers.length} layers,{' '}
+                        {saved.project.layers.reduce((sum, l) => sum + l.flowPaths.length, 0)}{' '}
+                        flowpaths
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => handleLoadProject(saved)}
+                        style={{
+                          padding: '6px 12px',
+                          backgroundColor: '#4a9eff',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        Load
+                      </button>
+                      <button
+                        onClick={() => handleDeleteProject(saved.id, saved.name)}
+                        style={{
+                          padding: '6px 12px',
+                          backgroundColor: '#c44',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div
+              style={{
+                marginTop: '16px',
+                padding: '12px',
+                backgroundColor: '#1a1a1a',
+                borderRadius: '4px',
+                fontSize: '11px',
+                color: '#666',
+              }}
+            >
+              {(() => {
+                const info = getStorageInfo();
+                const usedMB = (info.used / (1024 * 1024)).toFixed(2);
+                const totalMB = (info.total / (1024 * 1024)).toFixed(0);
+                const percent = ((info.used / info.total) * 100).toFixed(1);
+                return (
+                  <div>
+                    Storage: {usedMB}MB / {totalMB}MB ({percent}%)
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

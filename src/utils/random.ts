@@ -1,4 +1,6 @@
 import seedrandom from 'seedrandom';
+import type { MinMaxValue } from '../types';
+import { isMinMaxValue } from '../types';
 
 /**
  * Creates a seeded random number generator
@@ -77,4 +79,20 @@ export function mapRange(
   outMax: number
 ): number {
   return ((value - inMin) * (outMax - outMin)) / (inMax - inMin) + outMin;
+}
+
+/**
+ * Extracts a random value from a MinMaxValue range or returns the number directly
+ * @param value - MinMaxValue object or number
+ * @param rng - Random number generator function
+ * @returns Random number within the range
+ */
+export function getMinMaxValue(
+  value: MinMaxValue | number,
+  rng: () => number
+): number {
+  if (isMinMaxValue(value)) {
+    return lerp(value.min, value.max, rng());
+  }
+  return value;
 }

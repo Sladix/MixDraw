@@ -2,6 +2,8 @@ import { GeneratorRegistry } from '../core/GeneratorRegistry';
 import { BirdGenerator } from './BirdGenerator';
 import { LeafGenerator } from './LeafGenerator';
 import { PolygonGenerator } from './PolygonGenerator';
+import { GrassGenerator } from './GrassGenerator';
+import { TreeGenerator } from './TreeGenerator';
 
 // Track if generators have been registered to prevent double registration
 let generatorsRegistered = false;
@@ -19,9 +21,11 @@ export function registerAllGenerators(): void {
   GeneratorRegistry.register(new BirdGenerator());
   GeneratorRegistry.register(new LeafGenerator());
   GeneratorRegistry.register(new PolygonGenerator());
+  GeneratorRegistry.register(new GrassGenerator());
+  GeneratorRegistry.register(new TreeGenerator());
 
   generatorsRegistered = true;
 }
 
 // Export generators
-export { BirdGenerator, LeafGenerator, PolygonGenerator };
+export { BirdGenerator, LeafGenerator, PolygonGenerator, GrassGenerator, TreeGenerator };

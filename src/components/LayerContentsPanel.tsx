@@ -15,7 +15,7 @@ export function LayerContentsPanel() {
     return (
       <div
         style={{
-          width: '280px',
+          width: '380px',
           backgroundColor: '#2a2a2a',
           color: 'white',
           padding: '16px',
@@ -30,7 +30,7 @@ export function LayerContentsPanel() {
   return (
     <div
       style={{
-        width: '280px',
+        width: '380px',
         backgroundColor: '#2a2a2a',
         color: 'white',
         padding: '16px',

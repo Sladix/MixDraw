@@ -76,6 +76,7 @@ export const useStore = create<AppState>((set, get) => ({
         id: 'layer-1',
         name: 'Layer 1',
         color: '#000000',
+        strokeWidth: 0.3, // Default 0.3mm line width for plotter
         visible: true,
         locked: false,
         order: 0,
@@ -96,7 +97,7 @@ export const useStore = create<AppState>((set, get) => ({
   selectedGeneratorType: null,
   zoom: 1,
   pan: { x: 0, y: 0 },
-  paperFormat: 'A3',
+  paperFormat: 'A4',
   paperOrientation: 'portrait',
   globalSeed: Math.floor(Math.random() * 10000),
 
@@ -106,7 +107,16 @@ export const useStore = create<AppState>((set, get) => ({
       project: { ...state.project, backgroundImage: image },
     })),
 
-  loadProject: (project) => set({ project }),
+  loadProject: (project) => set({
+    project: {
+      ...project,
+      layers: project.layers.map((layer) => ({
+        ...layer,
+        // Add default strokeWidth for backward compatibility
+        strokeWidth: layer.strokeWidth ?? 0.3,
+      })),
+    },
+  }),
 
   // Layer actions
   addLayer: () =>
@@ -115,6 +125,7 @@ export const useStore = create<AppState>((set, get) => ({
         id: `layer-${generateId()}`,
         name: `Layer ${state.project.layers.length + 1}`,
         color: '#000000',
+        strokeWidth: 0.3, // Default 0.3mm line width for plotter
         visible: true,
         locked: false,
         order: state.project.layers.length,
@@ -174,6 +185,19 @@ export const useStore = create<AppState>((set, get) => ({
         id: `flowpath-${generateId()}`,
         layerId,
         ...flowPath,
+        // Ensure defaults for new modifier system fields
+        modifiers: flowPath.modifiers || [],
+        distributionParams: {
+          ...flowPath.distributionParams,
+          densityMode: flowPath.distributionParams.densityMode || 'visual',
+          packingMode: flowPath.distributionParams.packingMode || 'normal', // Default to normal packing (10% tolerance)
+        },
+        flowParams: {
+          ...flowPath.flowParams,
+          // NEW tube filling defaults
+          spread: flowPath.flowParams.spread ?? 10, // Default 10mm tube width
+          fillMode: flowPath.flowParams.fillMode || 'grid', // Default to grid mode
+        },
       };
       return {
         project: {

@@ -1,6 +1,6 @@
 import paper from 'paper';
 import type { Generator, Shape, ParamDefinition } from '../types';
-import { seededRandom, lerp } from '../utils/random';
+import { seededRandom, getMinMaxValue, lerp } from '../utils/random';
 import { mmToPx } from '../types/formats';
 
 export class LeafGenerator implements Generator {
@@ -13,7 +13,7 @@ export class LeafGenerator implements Generator {
     const rng = seededRandom(seed);
 
     // Get size from range (convert from mm to px)
-    const sizeMm = lerp(params.sizeMin, params.sizeMax, rng());
+    const sizeMm = getMinMaxValue(params.size, rng);
     const size = mmToPx(sizeMm);
     const curvature = params.curvature;
     const veins = params.veins;
@@ -51,7 +51,6 @@ export class LeafGenerator implements Generator {
     leaf.closed = true;
     leaf.smooth({ type: 'continuous' });
     leaf.strokeColor = new paper.Color('black');
-    leaf.strokeWidth = 1;
 
     const paths: paper.Path[] = [leaf];
 
@@ -67,7 +66,6 @@ export class LeafGenerator implements Generator {
         vein.add(new paper.Point(0, y));
         vein.add(new paper.Point(width * rng(), y + size * 0.05));
         vein.strokeColor = new paper.Color('black');
-        vein.strokeWidth = 1;
         paths.push(vein);
 
         const vein2 = vein.clone();
@@ -92,8 +90,7 @@ export class LeafGenerator implements Generator {
 
   getDefaultParams(): Record<string, any> {
     return {
-      sizeMin: 5,
-      sizeMax: 12,
+      size: { min: 5, max: 12 },
       curvature: 0.3,
       veins: 0.5,
     };
@@ -102,24 +99,15 @@ export class LeafGenerator implements Generator {
   getParamDefinitions(): ParamDefinition[] {
     return [
       {
-        name: 'sizeMin',
-        type: 'number',
+        name: 'size',
+        type: 'minmax',
         min: 1,
         max: 50,
         step: 0.5,
-        label: 'Taille min (mm)',
-        description: 'Taille minimale des feuilles en millimètres',
-        defaultValue: 5,
-      },
-      {
-        name: 'sizeMax',
-        type: 'number',
-        min: 1,
-        max: 50,
-        step: 0.5,
-        label: 'Taille max (mm)',
-        description: 'Taille maximale des feuilles en millimètres',
-        defaultValue: 12,
+        unit: 'mm',
+        label: 'Taille',
+        description: 'Taille des feuilles en millimètres',
+        defaultValue: { min: 5, max: 12 },
       },
       {
         name: 'curvature',

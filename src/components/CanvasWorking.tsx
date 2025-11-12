@@ -297,8 +297,9 @@ export function CanvasWorking() {
                     // Clone the path and add to layer
                     const clonedPath = path.clone();
 
-                    // Override stroke color with layer color (stroke-only for plotter)
+                    // Override stroke color and width with layer settings (stroke-only for plotter)
                     clonedPath.strokeColor = new paper.Color(layer.color);
+                    clonedPath.strokeWidth = layer.strokeWidth;
                     clonedPath.fillColor = null; // Remove any fills
 
                     layerGroup.addChild(clonedPath);
@@ -326,6 +327,7 @@ export function CanvasWorking() {
               instance.shape.paths.forEach((path) => {
                 const clonedPath = path.clone();
                 clonedPath.strokeColor = new paper.Color(layer.color);
+                clonedPath.strokeWidth = layer.strokeWidth;
                 clonedPath.fillColor = null;
                 layerGroup.addChild(clonedPath);
               });

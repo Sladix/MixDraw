@@ -1,11 +1,28 @@
+import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { GeneratorRegistry } from '../core/GeneratorRegistry';
 import type { ParamDefinition } from '../types';
+import { CollapsibleSection } from './CollapsibleSection';
+import { ModifierList } from './ModifierList';
+import { MinMaxControl } from './MinMaxControl';
 
 export function FlowPathPropertiesPanel() {
   const project = useStore((state) => state.project);
   const selection = useStore((state) => state.selection);
   const updateFlowPath = useStore((state) => state.updateFlowPath);
+
+  // State for collapsed sections
+  const [collapsedSections, setCollapsedSections] = useState({
+    shape: false,
+    distribution: false,
+    generators: false,
+    modifiers: false,
+    advanced: true, // Collapsed by default
+  });
+
+  const toggleSection = (section: keyof typeof collapsedSections) => {
+    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
 
   if (selection.type !== 'flowPath' || !selection.id) {
     return null;
@@ -145,6 +162,20 @@ export function FlowPathPropertiesPanel() {
           </label>
         );
 
+      case 'minmax':
+        return (
+          <MinMaxControl
+            key={paramDef.name}
+            label={paramDef.label}
+            value={value}
+            min={paramDef.min || 0}
+            max={paramDef.max || 100}
+            step={paramDef.step}
+            unit={paramDef.unit}
+            onChange={onChange}
+          />
+        );
+
       default:
         return null;
     }
@@ -164,7 +195,11 @@ export function FlowPathPropertiesPanel() {
       </h4>
 
       {/* Path Shape */}
-      <div style={{ marginBottom: '16px' }}>
+      <CollapsibleSection
+        title="Path Shape"
+        collapsed={collapsedSections.shape}
+        onToggle={() => toggleSection('shape')}
+      >
         <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', cursor: 'pointer' }}>
           <input
             type="checkbox"
@@ -180,14 +215,14 @@ export function FlowPathPropertiesPanel() {
             (Connect last to first point)
           </span>
         </label>
-      </div>
+      </CollapsibleSection>
 
       {/* Distribution Parameters */}
-      <div style={{ marginBottom: '16px' }}>
-        <h5 style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#aaa' }}>
-          Distribution
-        </h5>
-
+      <CollapsibleSection
+        title="Distribution"
+        collapsed={collapsedSections.distribution}
+        onToggle={() => toggleSection('distribution')}
+      >
         <label style={{ display: 'block', fontSize: '11px', marginBottom: '4px' }}>
           Mode
           <select
@@ -231,6 +266,77 @@ export function FlowPathPropertiesPanel() {
             }}
           />
         </label>
+
+        {/* Density Mode Toggle */}
+        <div style={{ marginTop: '12px' }}>
+          <label style={{ fontSize: '11px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
+            Density Mode
+          </label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => handleDistributionChange('densityMode', 'visual')}
+              style={{
+                flex: 1,
+                padding: '6px 12px',
+                backgroundColor: (selectedFlowPath.distributionParams.densityMode || 'visual') === 'visual' ? '#4a9eff' : '#333',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                color: '#fff',
+                fontSize: '10px',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
+              }}
+            >
+              Visual
+            </button>
+            <button
+              onClick={() => handleDistributionChange('densityMode', 'fixed-count')}
+              style={{
+                flex: 1,
+                padding: '6px 12px',
+                backgroundColor: selectedFlowPath.distributionParams.densityMode === 'fixed-count' ? '#4a9eff' : '#333',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                color: '#fff',
+                fontSize: '10px',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
+              }}
+            >
+              Fixed Count
+            </button>
+          </div>
+        </div>
+
+        {/* Packing Mode (only in visual mode) */}
+        {(selectedFlowPath.distributionParams.densityMode || 'visual') === 'visual' && (
+          <label style={{ display: 'block', fontSize: '11px', marginTop: '12px', marginBottom: '4px' }}>
+            Packing Mode
+            <span style={{ fontSize: '9px', color: '#666', marginLeft: '6px', display: 'block', marginTop: '2px' }}>
+              Controls overlap tolerance between shapes
+            </span>
+            <select
+              value={selectedFlowPath.distributionParams.packingMode || 'normal'}
+              onChange={(e) => handleDistributionChange('packingMode', e.target.value)}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '6px',
+                marginTop: '4px',
+                backgroundColor: '#2a2a2a',
+                color: 'white',
+                border: '1px solid #444',
+                borderRadius: '3px',
+                fontSize: '11px',
+              }}
+            >
+              <option value="tight">Tight (no overlap)</option>
+              <option value="normal">Normal (10% tolerance)</option>
+              <option value="loose">Loose (25% tolerance)</option>
+              <option value="allow-overlap">Allow Overlap</option>
+            </select>
+          </label>
+        )}
 
         {/* Perlin Noise Controls */}
         {selectedFlowPath.distributionParams.mode === 'noise' && (
@@ -296,13 +402,14 @@ export function FlowPathPropertiesPanel() {
             </label>
           </>
         )}
-      </div>
+      </CollapsibleSection>
 
       {/* Generators */}
-      <div style={{ marginBottom: '16px' }}>
-        <h5 style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#aaa' }}>
-          Generators ({selectedFlowPath.generators.length})
-        </h5>
+      <CollapsibleSection
+        title={`Generators (${selectedFlowPath.generators.length})`}
+        collapsed={collapsedSections.generators}
+        onToggle={() => toggleSection('generators')}
+      >
         {selectedFlowPath.generators.map((gen, index) => {
           const generator = GeneratorRegistry.get(gen.type);
           const paramDefs = generator?.getParamDefinitions() || [];
@@ -312,7 +419,7 @@ export function FlowPathPropertiesPanel() {
               key={gen.id}
               style={{
                 padding: '10px',
-                backgroundColor: '#222',
+                backgroundColor: '#2a2a2a',
                 borderRadius: '4px',
                 marginBottom: '8px',
                 border: '1px solid #333',
@@ -355,16 +462,86 @@ export function FlowPathPropertiesPanel() {
             </div>
           );
         })}
-      </div>
+      </CollapsibleSection>
 
-      {/* Flow Parameters */}
-      <div>
-        <h5 style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#aaa' }}>
-          Flow
-        </h5>
+      {/* Modifiers */}
+      <CollapsibleSection
+        title="Modifiers"
+        collapsed={collapsedSections.modifiers}
+        onToggle={() => toggleSection('modifiers')}
+      >
+        <ModifierList
+          modifiers={selectedFlowPath.modifiers || []}
+          onUpdate={(modifiers) => updateFlowPath(selectedFlowPath.id, { modifiers })}
+        />
+      </CollapsibleSection>
 
-        <label style={{ display: 'block', fontSize: '11px', marginBottom: '4px' }}>
+      {/* Advanced Flow Parameters */}
+      <CollapsibleSection
+        title="Advanced Flow"
+        collapsed={collapsedSections.advanced}
+        onToggle={() => toggleSection('advanced')}
+      >
+        {/* NEW TUBE FILLING SYSTEM */}
+        <div style={{ padding: '12px', backgroundColor: '#1a3a1a', borderRadius: '4px', marginBottom: '16px' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: '#4ade80', marginBottom: '12px' }}>
+            🎨 Tube Filling (NEW)
+          </div>
+
+          <label style={{ display: 'block', fontSize: '11px', marginBottom: '4px' }}>
+            Spread: {(selectedFlowPath.flowParams.spread ?? 10).toFixed(1)} mm
+            <span style={{ fontSize: '9px', color: '#666', marginLeft: '6px', display: 'block' }}>
+              Width of tube area to fill (total width, both sides of path)
+            </span>
+            <input
+              type="range"
+              min="1"
+              max="100"
+              step="1"
+              value={selectedFlowPath.flowParams.spread ?? 10}
+              onChange={(e) => handleFlowChange('spread', parseFloat(e.target.value))}
+              style={{
+                display: 'block',
+                width: '100%',
+                marginTop: '4px',
+              }}
+            />
+          </label>
+
+          <label style={{ display: 'block', fontSize: '11px', marginTop: '12px', marginBottom: '4px' }}>
+            Fill Mode
+            <span style={{ fontSize: '9px', color: '#666', marginLeft: '6px', display: 'block' }}>
+              How to distribute shapes within the tube
+            </span>
+            <select
+              value={selectedFlowPath.flowParams.fillMode || 'grid'}
+              onChange={(e) => handleFlowChange('fillMode', e.target.value)}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '6px',
+                marginTop: '4px',
+                backgroundColor: '#2a2a2a',
+                color: 'white',
+                border: '1px solid #444',
+                borderRadius: '3px',
+                fontSize: '11px',
+              }}
+            >
+              <option value="grid">Grid (regular pattern)</option>
+              <option value="noise">Noise (organic clustering)</option>
+              <option value="random">Random (uniform distribution)</option>
+              <option value="packed">Packed (maximum density)</option>
+            </select>
+          </label>
+        </div>
+
+        {/* Follow Curve Control */}
+        <label style={{ display: 'block', fontSize: '11px', marginTop: '12px', marginBottom: '4px' }}>
           Follow Curve: {selectedFlowPath.flowParams.followCurve.toFixed(2)}
+          <span style={{ fontSize: '9px', color: '#666', marginLeft: '6px', display: 'block' }}>
+            How much shapes align with curve direction (0 = no rotation, 1 = full alignment)
+          </span>
           <input
             type="range"
             min="0"
@@ -380,148 +557,8 @@ export function FlowPathPropertiesPanel() {
           />
         </label>
 
-        <label style={{ display: 'block', fontSize: '11px', marginTop: '8px', marginBottom: '4px' }}>
-          Deviation: {selectedFlowPath.flowParams.deviation.toFixed(1)} mm
-          <input
-            type="range"
-            min="0"
-            max="50"
-            step="0.5"
-            value={selectedFlowPath.flowParams.deviation}
-            onChange={(e) => handleFlowChange('deviation', parseFloat(e.target.value))}
-            style={{
-              display: 'block',
-              width: '100%',
-              marginTop: '4px',
-            }}
-          />
-        </label>
-
-        {/* Deviation Gradient Controls */}
-        <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#222', borderRadius: '4px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', cursor: 'pointer', marginBottom: '8px' }}>
-            <input
-              type="checkbox"
-              checked={selectedFlowPath.flowParams.deviationGradient?.enabled || false}
-              onChange={(e) => handleFlowChange('deviationGradient', {
-                ...(selectedFlowPath.flowParams.deviationGradient || {
-                  startMultiplier: 0,
-                  endMultiplier: 2.0,
-                  startT: 0,
-                  endT: 1,
-                  reverse: false,
-                }),
-                enabled: e.target.checked,
-              })}
-              style={{ marginRight: '8px', cursor: 'pointer' }}
-            />
-            Enable Deviation Gradient
-            <span style={{ fontSize: '9px', color: '#666', marginLeft: '8px' }}>
-              (cone dispersion)
-            </span>
-          </label>
-
-          {selectedFlowPath.flowParams.deviationGradient?.enabled && (
-            <>
-              <label style={{ display: 'block', fontSize: '10px', marginTop: '8px', marginBottom: '4px' }}>
-                Start Multiplier: {(selectedFlowPath.flowParams.deviationGradient.startMultiplier ?? 0).toFixed(2)}
-                <input
-                  type="range"
-                  min="0"
-                  max="5"
-                  step="0.1"
-                  value={selectedFlowPath.flowParams.deviationGradient.startMultiplier ?? 0}
-                  onChange={(e) => handleFlowChange('deviationGradient', {
-                    ...selectedFlowPath.flowParams.deviationGradient,
-                    startMultiplier: parseFloat(e.target.value),
-                  })}
-                  style={{ display: 'block', width: '100%', marginTop: '2px' }}
-                />
-              </label>
-
-              <label style={{ display: 'block', fontSize: '10px', marginTop: '8px', marginBottom: '4px' }}>
-                End Multiplier: {(selectedFlowPath.flowParams.deviationGradient.endMultiplier || 2.0).toFixed(2)}
-                <input
-                  type="range"
-                  min="0"
-                  max="5"
-                  step="0.1"
-                  value={selectedFlowPath.flowParams.deviationGradient.endMultiplier || 2.0}
-                  onChange={(e) => handleFlowChange('deviationGradient', {
-                    ...selectedFlowPath.flowParams.deviationGradient,
-                    endMultiplier: parseFloat(e.target.value),
-                  })}
-                  style={{ display: 'block', width: '100%', marginTop: '2px' }}
-                />
-              </label>
-
-              <label style={{ display: 'block', fontSize: '10px', marginTop: '8px', marginBottom: '4px' }}>
-                Start T: {(selectedFlowPath.flowParams.deviationGradient.startT || 0).toFixed(2)}
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={selectedFlowPath.flowParams.deviationGradient.startT || 0}
-                  onChange={(e) => handleFlowChange('deviationGradient', {
-                    ...selectedFlowPath.flowParams.deviationGradient,
-                    startT: parseFloat(e.target.value),
-                  })}
-                  style={{ display: 'block', width: '100%', marginTop: '2px' }}
-                />
-              </label>
-
-              <label style={{ display: 'block', fontSize: '10px', marginTop: '8px', marginBottom: '4px' }}>
-                End T: {(selectedFlowPath.flowParams.deviationGradient.endT || 1).toFixed(2)}
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={selectedFlowPath.flowParams.deviationGradient.endT || 1}
-                  onChange={(e) => handleFlowChange('deviationGradient', {
-                    ...selectedFlowPath.flowParams.deviationGradient,
-                    endT: parseFloat(e.target.value),
-                  })}
-                  style={{ display: 'block', width: '100%', marginTop: '2px' }}
-                />
-              </label>
-
-              <label style={{ display: 'flex', alignItems: 'center', fontSize: '10px', cursor: 'pointer', marginTop: '8px' }}>
-                <input
-                  type="checkbox"
-                  checked={selectedFlowPath.flowParams.deviationGradient.reverse || false}
-                  onChange={(e) => handleFlowChange('deviationGradient', {
-                    ...selectedFlowPath.flowParams.deviationGradient,
-                    reverse: e.target.checked,
-                  })}
-                  style={{ marginRight: '6px', cursor: 'pointer' }}
-                />
-                Reverse Direction
-              </label>
-            </>
-          )}
-        </div>
-
-        <label style={{ display: 'block', fontSize: '11px', marginTop: '8px', marginBottom: '4px' }}>
-          Normal Offset: {selectedFlowPath.flowParams.normalOffset.toFixed(1)} mm
-          <input
-            type="range"
-            min="-50"
-            max="50"
-            step="0.5"
-            value={selectedFlowPath.flowParams.normalOffset}
-            onChange={(e) => handleFlowChange('normalOffset', parseFloat(e.target.value))}
-            style={{
-              display: 'block',
-              width: '100%',
-              marginTop: '4px',
-            }}
-          />
-        </label>
-
         {/* Boids Controls */}
-        <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#222', borderRadius: '4px' }}>
+        <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#2a2a2a', borderRadius: '4px' }}>
           <h5 style={{ margin: '0 0 8px 0', fontSize: '11px', color: '#aaa' }}>
             Boids Simulation
             <span style={{ fontSize: '9px', color: '#666', marginLeft: '8px' }}>
@@ -563,7 +600,7 @@ export function FlowPathPropertiesPanel() {
             />
           </label>
         </div>
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }

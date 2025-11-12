@@ -1,6 +1,6 @@
 import paper from 'paper';
 import type { Generator, Shape, ParamDefinition } from '../types';
-import { seededRandom, lerp } from '../utils/random';
+import { seededRandom, getMinMaxValue } from '../utils/random';
 import { mmToPx } from '../types/formats';
 
 export class PolygonGenerator implements Generator {
@@ -13,7 +13,7 @@ export class PolygonGenerator implements Generator {
     const rng = seededRandom(seed);
 
     // Get parameters (convert size from mm to px)
-    const sizeMm = lerp(params.sizeMin, params.sizeMax, rng());
+    const sizeMm = getMinMaxValue(params.size, rng);
     const size = mmToPx(sizeMm);
     const sides = Math.floor(params.sides);
     const regularity = params.regularity;
@@ -38,12 +38,9 @@ export class PolygonGenerator implements Generator {
     polygon.closed = true;
 
     // Smooth if regularity is high
-    if (regularity > 0.7) {
+    if (regularity > 0.9) {
       polygon.smooth({ type: 'continuous' });
     }
-
-    polygon.strokeColor = new paper.Color('black');
-    polygon.strokeWidth = 1;
 
     const paths: paper.Path[] = [polygon];
 
@@ -53,8 +50,6 @@ export class PolygonGenerator implements Generator {
         center: new paper.Point(0, 0),
         radius: size * 0.1,
       });
-      center.strokeColor = new paper.Color('black');
-      center.strokeWidth = 1;
       paths.push(center);
     }
 
@@ -72,8 +67,7 @@ export class PolygonGenerator implements Generator {
 
   getDefaultParams(): Record<string, any> {
     return {
-      sizeMin: 3,
-      sizeMax: 10,
+      size: { min: 3, max: 10 },
       sides: 5,
       regularity: 0.8,
       centerDot: false,
@@ -83,24 +77,15 @@ export class PolygonGenerator implements Generator {
   getParamDefinitions(): ParamDefinition[] {
     return [
       {
-        name: 'sizeMin',
-        type: 'number',
+        name: 'size',
+        type: 'minmax',
         min: 1,
         max: 50,
         step: 0.5,
-        label: 'Taille min (mm)',
-        description: 'Taille minimale des polygones en millimètres',
-        defaultValue: 3,
-      },
-      {
-        name: 'sizeMax',
-        type: 'number',
-        min: 1,
-        max: 50,
-        step: 0.5,
-        label: 'Taille max (mm)',
-        description: 'Taille maximale des polygones en millimètres',
-        defaultValue: 10,
+        unit: 'mm',
+        label: 'Taille',
+        description: 'Taille des polygones en millimètres',
+        defaultValue: { min: 3, max: 10 },
       },
       {
         name: 'sides',

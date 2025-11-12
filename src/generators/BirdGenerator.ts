@@ -1,6 +1,6 @@
 import paper from 'paper';
 import type { Generator, Shape, ParamDefinition } from '../types';
-import { seededRandom, lerp } from '../utils/random';
+import { seededRandom, getMinMaxValue } from '../utils/random';
 import { mmToPx } from '../types/formats';
 
 export class BirdGenerator implements Generator {
@@ -13,7 +13,7 @@ export class BirdGenerator implements Generator {
     const rng = seededRandom(seed);
 
     // Get size from range (convert from mm to px)
-    const sizeMm = lerp(params.sizeMin, params.sizeMax, rng());
+    const sizeMm = getMinMaxValue(params.size, rng);
     const size = mmToPx(sizeMm);
     const wingSpan = params.wingSpan;
     const wingAngle = params.wingAngle;
@@ -23,8 +23,6 @@ export class BirdGenerator implements Generator {
       center: new paper.Point(0, 0),
       size: new paper.Size(size, size * 0.6),
     });
-    body.strokeColor = new paper.Color('black');
-    body.strokeWidth = 1;
 
     // Create left wing (curved path)
     const leftWing = new paper.Path();
@@ -39,7 +37,6 @@ export class BirdGenerator implements Generator {
     leftWing.smooth({ type: 'continuous' });
     leftWing.closed = true;
     leftWing.strokeColor = new paper.Color('black');
-    leftWing.strokeWidth = 1;
 
     // Create right wing (mirror of left)
     const rightWing = leftWing.clone();
@@ -54,7 +51,6 @@ export class BirdGenerator implements Generator {
         radius: size * 0.25,
       });
       head.strokeColor = new paper.Color('black');
-      head.strokeWidth = 1;
       paths.push(head);
     }
 
@@ -74,8 +70,7 @@ export class BirdGenerator implements Generator {
 
   getDefaultParams(): Record<string, any> {
     return {
-      sizeMin: 3,
-      sizeMax: 8,
+      size: { min: 3, max: 8 },
       wingSpan: 0.8,
       wingAngle: 0.3,
       detailLevel: 0.5,
@@ -85,24 +80,15 @@ export class BirdGenerator implements Generator {
   getParamDefinitions(): ParamDefinition[] {
     return [
       {
-        name: 'sizeMin',
-        type: 'number',
+        name: 'size',
+        type: 'minmax',
         min: 1,
         max: 50,
         step: 0.5,
-        label: 'Taille min (mm)',
-        description: 'Taille minimale des oiseaux en millimètres',
-        defaultValue: 3,
-      },
-      {
-        name: 'sizeMax',
-        type: 'number',
-        min: 1,
-        max: 50,
-        step: 0.5,
-        label: 'Taille max (mm)',
-        description: 'Taille maximale des oiseaux en millimètres',
-        defaultValue: 8,
+        unit: 'mm',
+        label: 'Taille',
+        description: 'Taille des oiseaux en millimètres',
+        defaultValue: { min: 3, max: 8 },
       },
       {
         name: 'wingSpan',

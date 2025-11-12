@@ -1,6 +1,7 @@
 import { useStore } from '../store/useStore';
 import { GeneratorRegistry } from '../core/GeneratorRegistry';
 import type { ParamDefinition } from '../types';
+import { MinMaxControl } from './MinMaxControl';
 
 export function StandaloneGeneratorPropertiesPanel() {
   const project = useStore((state) => state.project);
@@ -128,6 +129,20 @@ export function StandaloneGeneratorPropertiesPanel() {
               ))}
             </select>
           </label>
+        );
+
+      case 'minmax':
+        return (
+          <MinMaxControl
+            key={paramDef.name}
+            label={paramDef.label}
+            value={value}
+            min={paramDef.min || 0}
+            max={paramDef.max || 100}
+            step={paramDef.step}
+            unit={paramDef.unit}
+            onChange={onChange}
+          />
         );
 
       default:
