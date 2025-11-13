@@ -5,6 +5,8 @@ import { regenerateFlowPath, generateStandaloneInstance } from '../core/flowPath
 import { GeneratorRegistry } from '../core/GeneratorRegistry';
 import { PAPER_FORMATS, getEffectiveDimensions } from '../types/formats';
 import { absoluteToNormalized, normalizedToAbsolute } from '../utils/coordinates';
+import { hitTestObjects } from '../utils/hitTest';
+import { SelectionOverlay } from './SelectionOverlay';
 
 export function CanvasWorking() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -17,6 +19,11 @@ export function CanvasWorking() {
   const [pathPoints, setPathPoints] = useState<paper.Point[]>([]);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
 
+  // Selection and drag state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
   const project = useStore((state) => state.project);
   const zoom = useStore((state) => state.zoom);
   const currentTool = useStore((state) => state.currentTool);
@@ -26,6 +33,11 @@ export function CanvasWorking() {
   const addStandaloneGenerator = useStore((state) => state.addStandaloneGenerator);
   const selectedGeneratorType = useStore((state) => state.selectedGeneratorType);
   const globalSeed = useStore((state) => state.globalSeed);
+  const selectObject = useStore((state) => state.selectObject);
+  const deselectAll = useStore((state) => state.deselectAll);
+  const selection = useStore((state) => state.selection);
+  const moveSelected = useStore((state) => state.moveSelected);
+  const pushToHistory = useStore((state) => state.pushToHistory);
 
   // Helper: Calculate scale factor for content rendering
   const getScaleFactor = useCallback(() => {
@@ -294,10 +306,8 @@ export function CanvasWorking() {
 
                 instances.forEach((instance) => {
                   instance.shape.paths.forEach((path) => {
-                    // Clone the path and add to layer
+                    // Clone the path and apply layer styles
                     const clonedPath = path.clone();
-
-                    // Override stroke color and width with layer settings (stroke-only for plotter)
                     clonedPath.strokeColor = new paper.Color(layer.color);
                     clonedPath.strokeWidth = layer.strokeWidth;
                     clonedPath.fillColor = null; // Remove any fills
@@ -360,6 +370,17 @@ export function CanvasWorking() {
     paperProject.view.update();
   }, [project, zoom, tempPath, isInitialized, globalSeed, canvasSize, paperFormat, paperOrientation, getScaleFactor]);
 
+  // Render SelectionOverlay component as a React component
+  // (It will manage its own Paper.js layer internally)
+  const selectionOverlay = isInitialized && projectRef.current ? (
+    <SelectionOverlay
+      paperProject={projectRef.current}
+      scaleFactor={getScaleFactor()}
+      canvasCenter={{ x: canvasSize.width / 2, y: canvasSize.height / 2 }}
+      dragOffset={dragOffset}
+    />
+  ) : null;
+
   // Mouse handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!projectRef.current || !canvasRef.current) return;
@@ -379,6 +400,66 @@ export function CanvasWorking() {
       handleFlowPathClick(point, firstLayer.id);
     } else if (currentTool === 'standalone') {
       handleStandalonePlacement(point, firstLayer.id);
+    } else if (currentTool === 'select') {
+      handleSelectClick(point, e.shiftKey, { x, y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDragging || !dragStart || currentTool !== 'select') return;
+    if (!canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const dx = x - dragStart.x;
+    const dy = y - dragStart.y;
+
+    setDragOffset({ x: dx, y: dy });
+  };
+
+  const handleMouseUp = () => {
+    if (isDragging && currentTool === 'select') {
+      // Apply the drag offset as a move operation
+      if (dragOffset.x !== 0 || dragOffset.y !== 0) {
+        // Convert pixel offset to normalized coordinates
+        const format = PAPER_FORMATS[paperFormat];
+        const dims = getEffectiveDimensions(format, paperOrientation);
+        const scale = getScaleFactor();
+
+        const normalizedDx = (dragOffset.x / scale) / dims.widthPx;
+        const normalizedDy = (dragOffset.y / scale) / dims.heightPx;
+
+        moveSelected(normalizedDx, normalizedDy);
+      }
+
+      setIsDragging(false);
+      setDragStart(null);
+      setDragOffset({ x: 0, y: 0 });
+    }
+  };
+
+  const handleSelectClick = (point: paper.Point, shiftKey: boolean, screenPos: { x: number; y: number }) => {
+    // Hit test to find object at click point
+    const hitResult = hitTestObjects(point, project);
+
+    if (hitResult) {
+      // Select the object
+      selectObject(hitResult.id, hitResult.type, shiftKey);
+
+      // Start drag operation if clicking on selected object
+      if (selection.ids.includes(hitResult.id)) {
+        pushToHistory(); // Push before starting drag
+        setIsDragging(true);
+        setDragStart(screenPos);
+        setDragOffset({ x: 0, y: 0 });
+      }
+    } else {
+      // Click on empty space - deselect
+      if (!shiftKey) {
+        deselectAll();
+      }
     }
   };
 
@@ -529,9 +610,14 @@ export function CanvasWorking() {
         backgroundColor: '#e0e0e0',
       }}
     >
+      {/* Render SelectionOverlay React component */}
+      {selectionOverlay}
       <canvas
         ref={canvasRef}
         onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
         onKeyDown={handleKeyDown}
         tabIndex={0}
         style={{
@@ -543,6 +629,10 @@ export function CanvasWorking() {
               ? 'crosshair'
               : currentTool === 'standalone'
               ? 'copy'
+              : isDragging
+              ? 'grabbing'
+              : currentTool === 'select'
+              ? 'grab'
               : 'default',
         }}
       />

@@ -1,60 +1,87 @@
 import paper from 'paper';
-import type { FlowPath, GeneratedInstance, Shape, FlowParams, AnyModifier } from '../types';
-import { generateTValues } from './distribution';
+import type { FlowPath, GeneratedInstance, Shape, AnyModifier, Timeline, FlowParams } from '../types';
 import { generateTubePositions } from './tubeFilling';
 import { weightedRandomChoice, seededRandom } from '../utils/random';
 import { GeneratorRegistry } from './GeneratorRegistry';
-import { mmToPx } from '../types/formats';
 import {
   calculateSizeMultiplier,
   calculateRotationOffset,
   calculateAverageGeneratorSize,
+  calculateSpreadWidth,
 } from './modifierEngine';
+import { applyTimelineToParam } from '../utils/interpolation';
+import { evaluateAnimatableParams } from '../utils/animatable';
 
 /**
- * Regenerate all instances along a FlowPath
+ * Regenerate all instances along a FlowPath using 2D tube filling
  * @param flowPath - FlowPath to regenerate
  * @returns Array of generated instances
  */
 export function regenerateFlowPath(flowPath: FlowPath): GeneratedInstance[] {
-  console.log(`🔄 regenerateFlowPath() - FlowPath ID: ${flowPath.id}`);
-  const curveLength = flowPath.bezierCurve.length;
-  console.log(`  🔍 Curve length: ${curveLength.toFixed(2)}`);
-
-  // Check if using new tube filling system or old 1D distribution
-  const useNewSystem = flowPath.flowParams.spread !== undefined && flowPath.flowParams.fillMode !== undefined;
-
-  if (useNewSystem) {
-    // NEW SYSTEM: 2D tube filling
-    console.log(`  🎨 Using NEW tube filling system`);
-    return regenerateFlowPathWithTubeFilling(flowPath);
-  } else {
-    // OLD SYSTEM: 1D distribution with deviation
-    console.log(`  📏 Using OLD 1D distribution system`);
-    return regenerateFlowPathLegacy(flowPath);
-  }
-}
-
-/**
- * NEW SYSTEM: Regenerate FlowPath using 2D tube filling
- */
-function regenerateFlowPathWithTubeFilling(flowPath: FlowPath): GeneratedInstance[] {
   const avgShapeSize = calculateAverageGeneratorSize(flowPath.generators);
   const packingMode = flowPath.distributionParams.packingMode || 'normal';
 
-  // Generate 2D positions within tube
+  // Pre-calculate accurate bounds for each generator by sampling
+  const generatorBounds = new Map<string, number>();
+  for (const genConfig of flowPath.generators) {
+    const generator = GeneratorRegistry.get(genConfig.type);
+    if (generator) {
+      // Evaluate parameters at middle of path for representative sample
+      const sampleRng = seededRandom(flowPath.distributionParams.seed);
+      const evaluatedSampleParams = evaluateAnimatableParams(
+        genConfig.params,
+        0.5, // Middle of path
+        sampleRng,
+        flowPath.timelines,
+        `gen.${genConfig.id}` // Pass generator ID as prefix
+      );
+
+      // Generate sample shape to get accurate bounds
+      const sampleShape = generator.generate(0.5, evaluatedSampleParams, 0);
+
+      // Calculate bounding circle radius from actual geometry
+      let maxRadius = 0;
+      for (const path of sampleShape.paths) {
+        const bounds = path.bounds;
+        const width = bounds.width;
+        const height = bounds.height;
+        // Use circumradius (diagonal / 2) for conservative estimate
+        const radius = Math.sqrt(width * width + height * height) / 2;
+        maxRadius = Math.max(maxRadius, radius);
+        path.remove(); // Clean up
+      }
+
+      generatorBounds.set(genConfig.id, maxRadius);
+    }
+  }
+
+  // Create evaluator functions that combine base values + modifiers + timelines
+  const spreadEvaluator = (t: number): number => {
+    const baseSpread = flowPath.flowParams.spread;
+    const withTimeline = applyTimelineToParam(t, 'spread', baseSpread, flowPath.timelines);
+    return calculateSpreadWidth(t, flowPath.modifiers || [], withTimeline);
+  };
+
+  const densityEvaluator = (t: number): number => {
+    const baseDensity = flowPath.distributionParams.density;
+    return applyTimelineToParam(t, 'density', baseDensity, flowPath.timelines);
+  };
+
+  // Generate 2D positions within tube with accurate bounds
+  const minSpacing = flowPath.distributionParams.minSpacing ?? 0;
   const tubePositions = generateTubePositions(
     flowPath.bezierCurve,
-    flowPath.flowParams.spread,
+    spreadEvaluator,
     flowPath.flowParams.fillMode,
-    flowPath.distributionParams.density,
+    densityEvaluator,
     avgShapeSize,
     packingMode,
+    minSpacing,
     flowPath.modifiers || [],
-    flowPath.distributionParams.seed
+    flowPath.distributionParams.seed,
+    flowPath.generators,
+    generatorBounds
   );
-
-  console.log(`  🔍 Generated ${tubePositions.length} 2D tube positions`);
 
   // Generate shapes at each 2D position
   const instances = tubePositions.map((tubePos, index) => {
@@ -79,9 +106,20 @@ function regenerateFlowPathWithTubeFilling(flowPath: FlowPath): GeneratedInstanc
       throw new Error(`Generator "${generatorConfig.type}" not found`);
     }
 
+    // Evaluate animatable parameters at this position t
+    // Pass generator ID as prefix for parameter lookup (e.g., "gen.abc123")
+    const rng = seededRandom(flowPath.distributionParams.seed + index);
+    const evaluatedParams = evaluateAnimatableParams(
+      generatorConfig.params,
+      tubePos.t,
+      rng,
+      flowPath.timelines,
+      `gen.${generatorConfig.id}`
+    );
+
     const shape = generator.generate(
       tubePos.t,
-      generatorConfig.params,
+      evaluatedParams,
       flowPath.distributionParams.seed + index
     );
 
@@ -94,7 +132,8 @@ function regenerateFlowPathWithTubeFilling(flowPath: FlowPath): GeneratedInstanc
       flowPath.flowParams,
       flowPath.modifiers || [],
       generatorConfig,
-      tubePos.t
+      tubePos.t,
+      flowPath.timelines
     );
 
     const instance: GeneratedInstance = {
@@ -110,212 +149,11 @@ function regenerateFlowPathWithTubeFilling(flowPath: FlowPath): GeneratedInstanc
     return instance;
   });
 
-  console.log(`  ✅ Generated ${instances.length} total instances (tube filling)`);
-
-  // Apply boids simulation if enabled
-  if (flowPath.flowParams.boidsStrength > 0) {
-    applyBoidsSimulation(instances, flowPath.flowParams);
-  }
-
   return instances;
 }
 
 /**
- * OLD SYSTEM: Regenerate FlowPath using 1D distribution
- * Kept for backward compatibility
- */
-function regenerateFlowPathLegacy(flowPath: FlowPath): GeneratedInstance[] {
-  const curveLength = flowPath.bezierCurve.length;
-
-  // 1. Generate t values based on distribution mode
-  // Pass curve, generators and modifiers for visual density calculations
-  const tValues = generateTValues(
-    flowPath.distributionParams,
-    flowPath.bezierCurve,
-    flowPath.generators.length,
-    flowPath.generators,
-    flowPath.modifiers || []
-  );
-  console.log(`  🔍 Generated ${tValues.length} t-values for ${flowPath.generators.length} generator(s)`);
-
-  // 2. Generate shapes at each t position
-  const instances = tValues.map((t, index) => {
-    // Choose generator based on weights
-    if (flowPath.generators.length === 0) {
-      throw new Error('FlowPath has no generators');
-    }
-
-    const generatorConfig = weightedRandomChoice(
-      flowPath.generators,
-      flowPath.distributionParams.seed + index
-    );
-
-    // Get curve information at t
-    const offset = t * curveLength;
-    const basePoint = flowPath.bezierCurve.getPointAt(offset);
-    const tangent = flowPath.bezierCurve.getTangentAt(offset);
-    const normal = flowPath.bezierCurve.getNormalAt(offset);
-
-    // Generate shape (pure function!)
-    const generator = GeneratorRegistry.get(generatorConfig.type);
-    if (!generator) {
-      throw new Error(`Generator "${generatorConfig.type}" not found`);
-    }
-
-    const shape = generator.generate(
-      t,
-      generatorConfig.params,
-      flowPath.distributionParams.seed + index
-    );
-
-    // Apply flow transformations
-    const transformedShape = applyFlowTransform(
-      shape,
-      basePoint,
-      tangent,
-      normal,
-      flowPath.flowParams,
-      flowPath.modifiers || [],
-      flowPath.distributionParams.seed + index,
-      generatorConfig,
-      t // Pass t for modifiers and deviation gradient
-    );
-
-    const instance: GeneratedInstance = {
-      id: `${flowPath.id}-instance-${index}`,
-      shape: transformedShape,
-      position: basePoint,
-      rotation: 0,
-      scale: 1,
-      sourceId: flowPath.id,
-      generatorType: generatorConfig.type,
-    };
-
-    return instance;
-  });
-
-  console.log(`  ✅ Generated ${instances.length} total instances`);
-
-  // 3. Apply boids simulation if enabled
-  if (flowPath.flowParams.boidsStrength > 0) {
-    applyBoidsSimulation(instances, flowPath.flowParams);
-  }
-
-  return instances;
-}
-
-/**
- * Apply flow transformations to a shape
- * @param shape - Original shape
- * @param basePoint - Position on curve
- * @param tangent - Tangent vector at position
- * @param normal - Normal vector at position
- * @param flowParams - Flow parameters
- * @param modifiers - Array of modifiers to apply
- * @param seed - Random seed for this instance
- * @param generatorConfig - Generator configuration (for followNormal setting)
- * @param t - Normalized position along curve [0, 1] for modifiers and deviation gradient
- * @returns Transformed shape
- */
-function applyFlowTransform(
-  shape: Shape,
-  basePoint: paper.Point,
-  tangent: paper.Point,
-  normal: paper.Point,
-  flowParams: FlowParams,
-  modifiers: AnyModifier[],
-  seed: number,
-  generatorConfig: any,
-  t: number = 0
-): Shape {
-  // Calculate rotation based on curve following
-  let curveAngle: number;
-
-  if (generatorConfig.followNormal) {
-    // Point toward the normal (perpendicular to curve)
-    curveAngle = Math.atan2(normal.y, normal.x);
-  } else {
-    // Point along the tangent (default behavior)
-    curveAngle = Math.atan2(tangent.y, tangent.x);
-  }
-
-  const followRotation = (curveAngle * flowParams.followCurve * 180) / Math.PI;
-
-  // Apply rotation modifier
-  const rotationOffset = calculateRotationOffset(t, modifiers);
-
-  // Calculate position with deviation
-  const rng = seededRandom(seed);
-
-  // Apply gradient to deviation (cone dispersion effect)
-  let deviationMultiplier = 1;
-  if (flowParams.deviationGradient?.enabled) {
-    const gradient = flowParams.deviationGradient;
-    const { startMultiplier, endMultiplier, startT, endT, reverse } = gradient;
-
-    // Clamp t to the gradient range
-    if (t >= startT && t <= endT) {
-      // Calculate normalized position within the gradient range
-      const normalizedT = (t - startT) / (endT - startT);
-
-      // Apply reverse if needed
-      const effectiveT = reverse ? 1 - normalizedT : normalizedT;
-
-      // Lerp between start and end multipliers
-      deviationMultiplier = startMultiplier + effectiveT * (endMultiplier - startMultiplier);
-    } else if (t < startT) {
-      // Before gradient range
-      deviationMultiplier = reverse ? endMultiplier : startMultiplier;
-    } else {
-      // After gradient range
-      deviationMultiplier = reverse ? startMultiplier : endMultiplier;
-    }
-  }
-
-  // Convert deviation and normalOffset from mm to px
-  const effectiveDeviationMm = flowParams.deviation * deviationMultiplier;
-  const effectiveDeviation = mmToPx(effectiveDeviationMm);
-
-  const deviation = (rng() - 0.5) * 2 * effectiveDeviation;
-  const normalOffset = mmToPx(flowParams.normalOffset);
-
-  const finalPosition = basePoint
-    .add(normal.multiply(normalOffset))
-    .add(normal.multiply(deviation));
-
-  // Apply size modifier
-  const sizeMultiplier = calculateSizeMultiplier(t, modifiers);
-
-  // Clone and transform all paths
-  const transformedPaths = shape.paths.map((path) => {
-    const transformed = path.clone();
-
-    // Apply size scaling at anchor point
-    if (sizeMultiplier !== 1.0) {
-      transformed.scale(sizeMultiplier, shape.anchor);
-    }
-
-    // Apply rotation (flow following + modifier)
-    const totalRotation = followRotation + rotationOffset;
-    transformed.rotate(totalRotation, shape.anchor);
-
-    // Apply translation
-    transformed.position = transformed.position
-      .subtract(shape.anchor)
-      .add(finalPosition);
-
-    return transformed;
-  });
-
-  return {
-    paths: transformedPaths,
-    bounds: shape.bounds,
-    anchor: finalPosition,
-  };
-}
-
-/**
- * Apply transformations for tube filling system (simpler than old system)
+ * Apply transformations for tube filling system
  * Position is already calculated by tube filling algorithm
  *
  * @param shape - Original shape
@@ -336,8 +174,12 @@ function applyTubeTransform(
   flowParams: FlowParams,
   modifiers: AnyModifier[],
   generatorConfig: any,
-  t: number
+  t: number,
+  timelines?: Timeline[]
 ): Shape {
+  // Apply timeline values to flowParams at this t position
+  const followCurve = applyTimelineToParam(t, 'followCurve', flowParams.followCurve, timelines);
+
   // Calculate rotation based on curve following
   let curveAngle: number;
 
@@ -349,7 +191,7 @@ function applyTubeTransform(
     curveAngle = Math.atan2(tangent.y, tangent.x);
   }
 
-  const followRotation = (curveAngle * flowParams.followCurve * 180) / Math.PI;
+  const followRotation = (curveAngle * followCurve * 180) / Math.PI;
 
   // Apply rotation modifier
   const rotationOffset = calculateRotationOffset(t, modifiers);
@@ -384,66 +226,6 @@ function applyTubeTransform(
 }
 
 /**
- * Apply simplified boids simulation to instances
- * @param instances - Array of instances to modify
- * @param flowParams - Flow parameters
- */
-function applyBoidsSimulation(
-  instances: GeneratedInstance[],
-  flowParams: FlowParams
-): void {
-  const { boidsStrength, boidsRadius } = flowParams;
-
-  if (boidsStrength === 0) return;
-
-  // Convert boids radius from mm to px
-  const boidsRadiusPx = mmToPx(boidsRadius);
-
-  // Simple boids: each instance is attracted to nearby instances
-  for (let i = 0; i < instances.length; i++) {
-    const instance = instances[i];
-    const position = instance.shape.anchor;
-
-    let avgX = 0;
-    let avgY = 0;
-    let count = 0;
-
-    // Find nearby instances
-    for (let j = 0; j < instances.length; j++) {
-      if (i === j) continue;
-
-      const other = instances[j];
-      const otherPos = other.shape.anchor;
-      const distance = position.getDistance(otherPos);
-
-      if (distance < boidsRadiusPx) {
-        avgX += otherPos.x;
-        avgY += otherPos.y;
-        count++;
-      }
-    }
-
-    if (count > 0) {
-      avgX /= count;
-      avgY /= count;
-
-      // Move towards average position
-      const targetX = position.x + (avgX - position.x) * boidsStrength;
-      const targetY = position.y + (avgY - position.y) * boidsStrength;
-
-      const offset = new paper.Point(targetX - position.x, targetY - position.y);
-
-      // Apply offset to all paths
-      instance.shape.paths.forEach((path) => {
-        path.position = path.position.add(offset);
-      });
-
-      instance.shape.anchor = new paper.Point(targetX, targetY);
-    }
-  }
-}
-
-/**
  * Generate a standalone generator instance
  * @param generatorType - Type of generator
  * @param params - Generator parameters
@@ -466,7 +248,11 @@ export function generateStandaloneInstance(
     throw new Error(`Generator "${generatorType}" not found`);
   }
 
-  const shape = generator.generate(0.5, params, seed);
+  // Evaluate animatable parameters before passing to generator
+  const rng = seededRandom(seed);
+  const evaluatedParams = evaluateAnimatableParams(params, 0.5, rng);
+
+  const shape = generator.generate(0.5, evaluatedParams, seed);
 
   // Transform shape
   const transformedPaths = shape.paths.map((path) => {

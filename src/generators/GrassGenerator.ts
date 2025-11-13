@@ -1,7 +1,7 @@
 import paper from 'paper';
 import type { Generator, Shape, ParamDefinition } from '../types';
 import { mmToPx } from '../types/formats';
-import { seededRandom, getMinMaxValue, lerp } from '../utils/random';
+import { seededRandom, lerp } from '../utils/random';
 
 /**
  * Grass Generator
@@ -22,13 +22,12 @@ export class GrassGenerator implements Generator {
   generate(t: number, params: Record<string, any>, seed: number): Shape {
     const rng = seededRandom(seed + t * 1000);
 
-    // Size parameters (in mm, converted to px)
-    const heightMm = getMinMaxValue(params.height, rng);
-    const height = mmToPx(heightMm);
+    // Size parameters are already evaluated to plain numbers
+    const height = mmToPx(params.height);
     const baseWidth = mmToPx(params.baseWidth);
 
-    // Blade curvature and sway
-    const sway = getMinMaxValue(params.sway, rng);
+    // Blade curvature and sway (sway is already evaluated)
+    const sway = params.sway;
     const curve = params.curvature * (rng() - 0.5) * 2; // -1 to 1 range
 
     // Build grass blade as a tapered curved path

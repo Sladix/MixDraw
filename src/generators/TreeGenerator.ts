@@ -1,7 +1,7 @@
 import paper from 'paper';
 import type { Generator, Shape, ParamDefinition } from '../types';
 import { mmToPx } from '../types/formats';
-import { seededRandom, getMinMaxValue, lerp } from '../utils/random';
+import { seededRandom, lerp } from '../utils/random';
 import { LeafGenerator } from './LeafGenerator';
 
 /**
@@ -23,9 +23,8 @@ export class TreeGenerator implements Generator {
   generate(t: number, params: Record<string, any>, seed: number): Shape {
     const rng = seededRandom(seed + t * 1000);
 
-    // Size parameters
-    const heightMm = getMinMaxValue(params.height, rng);
-    const trunkHeight = mmToPx(heightMm);
+    // Size parameters - height is already evaluated to a plain number
+    const trunkHeight = mmToPx(params.height);
     const trunkWidth = mmToPx(params.trunkWidth);
 
     const paths: paper.Path[] = [];
@@ -133,9 +132,9 @@ export class TreeGenerator implements Generator {
 
             // Generate leaf using LeafGenerator
             const leafSeed = seed + i * 100 + Math.floor(endPoint.x + endPoint.y);
+            // Leaf params are plain numbers (leafSize is already a number)
             const leafParams = {
-              sizeMin: params.leafSize * 0.8,
-              sizeMax: params.leafSize * 1.2,
+              size: params.leafSize * (0.8 + rng() * 0.4), // Random variation 0.8-1.2
               curvature: 0.3,
               veins: 0,
             };

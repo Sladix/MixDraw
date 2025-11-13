@@ -22,6 +22,53 @@ export function isMinMaxValue(value: any): value is MinMaxValue {
     'min' in value &&
     'max' in value &&
     typeof value.min === 'number' &&
+    typeof value.max === 'number' &&
+    !('timelineId' in value) // Exclude AnimatableMinMaxValue
+  );
+}
+
+/**
+ * AnimatableParameter - unified parameter type that supports:
+ * - Static value (number)
+ * - Random range (MinMaxValue)
+ * - Timeline-driven range (AnimatableMinMaxValue)
+ */
+export type AnimatableParameter = number | MinMaxValue | AnimatableMinMaxValue;
+
+/**
+ * MinMaxValue with optional timeline animation
+ * The timeline can modulate the min/max bounds based on position t
+ */
+export interface AnimatableMinMaxValue extends MinMaxValue {
+  timelineId?: string; // Reference to timeline in FlowPath.timelines[]
+}
+
+/**
+ * Type guard to check if a value is an AnimatableMinMaxValue
+ */
+export function isAnimatableMinMaxValue(value: any): value is AnimatableMinMaxValue {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'min' in value &&
+    'max' in value &&
+    typeof value.min === 'number' &&
+    typeof value.max === 'number' &&
+    'timelineId' in value &&
+    typeof value.timelineId === 'string'
+  );
+}
+
+/**
+ * Type guard to check if a value is any kind of MinMaxValue (including animatable)
+ */
+export function isAnyMinMaxValue(value: any): value is MinMaxValue | AnimatableMinMaxValue {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'min' in value &&
+    'max' in value &&
+    typeof value.min === 'number' &&
     typeof value.max === 'number'
   );
 }
@@ -86,6 +133,7 @@ export interface FlowPath {
   generators: GeneratorConfig[];
   dependencies?: FlowPathDependencies;
   closed?: boolean; // Whether to close the path (connect last to first point)
+  timelines?: Timeline[]; // Keyframe-based parameter animation
 }
 
 export type PackingMode = 'tight' | 'normal' | 'loose' | 'allow-overlap';
@@ -95,6 +143,7 @@ export interface DistributionParams {
   density: number; // total shapes per mm (divided by generator count internally)
   densityMode?: 'visual' | 'fixed-count'; // visual = adjust for size, fixed-count = exact count
   packingMode?: PackingMode; // Collision detection mode (tight = no overlap, normal = 10%, loose = 25%, allow-overlap = disabled)
+  minSpacing?: number; // Minimum spacing between shapes in mm (negative = tighter, positive = more space)
   spacing: [number, number]; // [min, max]
   seed: number;
   noiseScale?: number; // Scale of noise (frequency) for perlin distribution
@@ -106,28 +155,28 @@ export type FillMode = 'grid' | 'noise' | 'random' | 'packed';
 
 export interface FlowParams {
   followCurve: number; // 0-1
-
-  // NEW SYSTEM: Tube filling
   spread: number; // Width of tube in mm (e.g., 10mm = 5mm each side of path)
   fillMode: FillMode; // How to fill the tube area
+}
 
-  // OLD SYSTEM: Keep for backward compatibility
-  deviation: number; // in mm (deprecated, kept for existing projects)
-  normalOffset: number; // in mm (deprecated, kept for existing projects)
+// ============================================================================
+// Timeline & Keyframe System
+// ============================================================================
 
-  // Boids simulation
-  boidsStrength: number; // 0-1
-  boidsRadius: number; // in mm
+export type InterpolationType = 'linear' | 'ease' | 'sin';
 
-  // Deprecated gradient system (kept for backward compatibility)
-  deviationGradient?: {
-    enabled: boolean;
-    startMultiplier: number;
-    endMultiplier: number;
-    startT: number;
-    endT: number;
-    reverse: boolean;
-  };
+export interface Keyframe {
+  id: string;
+  t: number; // Position along path (0-1)
+  value: number; // Parameter value at this position
+  interpolation: InterpolationType; // How to interpolate to next keyframe
+}
+
+export interface Timeline {
+  id: string;
+  paramName: string; // e.g., 'density', 'spread', 'followCurve', 'rotation', 'size'
+  keyframes: Keyframe[];
+  enabled: boolean;
 }
 
 // ============================================================================
@@ -145,6 +194,7 @@ export interface BaseModifier {
   valueStart: number; // Starting value
   valueEnd: number; // Ending value
   curve: CurveType; // Interpolation curve
+  timelines?: Timeline[]; // Keyframe-based parameter animation
 }
 
 export interface SizeModifier extends BaseModifier {
@@ -279,7 +329,10 @@ export interface ToolType {
 
 export interface Selection {
   type: 'layer' | 'flowPath' | 'standaloneGenerator' | 'none';
-  id: string | null;
+  id: string | null; // Keep for backward compatibility with single selection
+  ids: string[]; // Multi-select support
+  bounds?: paper.Rectangle; // Computed selection bounds
+  transformMode?: 'move' | 'rotate' | 'scale' | null; // Active transform
 }
 
 // ============================================================================

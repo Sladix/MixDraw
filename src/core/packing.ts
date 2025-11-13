@@ -75,7 +75,7 @@ export class SpatialGrid {
  * Check if two rectangles intersect with optional tolerance
  * @param a - First rectangle
  * @param b - Second rectangle
- * @param tolerance - Overlap tolerance (0 = no overlap allowed, 0.1 = 10% overlap allowed)
+ * @param tolerance - Negative = allow overlap (tight packing), 0 = no overlap, positive = require spacing
  * @returns true if rectangles collide
  */
 export function checkCollision(
@@ -88,8 +88,9 @@ export function checkCollision(
     return a.intersects(b);
   }
 
-  // Allow some overlap based on tolerance
-  // Shrink rectangles by tolerance percentage before checking
+  // Shrink or expand rectangles based on tolerance
+  // Negative tolerance = shrink bounds = allow overlap (tighter packing)
+  // Positive tolerance = expand bounds = require more spacing
   const shrinkA = new paper.Rectangle(a);
   const shrinkB = new paper.Rectangle(b);
 
@@ -121,18 +122,31 @@ export interface PackingConfig {
 
 /**
  * Get tolerance for packing mode
+ * Negative values allow slight overlap to compensate for rectangular bounds around non-rectangular shapes
  */
-export function getPackingTolerance(mode: PackingMode): number {
+export function getPackingTolerance(mode: PackingMode, minSpacing: number = 0): number {
+  let baseTolerance: number;
+
   switch (mode) {
     case 'tight':
-      return 0; // No overlap allowed
+      // Allow negative tolerance (overlap) to pack tighter with rectangular bounds
+      baseTolerance = -0.2; // Allow 20% overlap of bounding boxes
+      break;
     case 'normal':
-      return 0.1; // 10% overlap allowed
+      baseTolerance = 0.1; // 10% overlap allowed
+      break;
     case 'loose':
-      return 0.25; // 25% overlap allowed
+      baseTolerance = 0.25; // 25% overlap allowed
+      break;
     case 'allow-overlap':
-      return 1.0; // Full overlap allowed (no collision checking)
+      baseTolerance = 1.0; // Full overlap allowed (no collision checking)
+      break;
   }
+
+  // Adjust tolerance based on minSpacing (in mm)
+  // Positive minSpacing creates more space, negative makes packing tighter
+  const spacingAdjustment = minSpacing * 0.05; // Scale minSpacing to tolerance range
+  return baseTolerance + spacingAdjustment;
 }
 
 /**

@@ -1,6 +1,6 @@
 import paper from 'paper';
 import type { Generator, Shape, ParamDefinition } from '../types';
-import { seededRandom, getMinMaxValue } from '../utils/random';
+import { seededRandom } from '../utils/random';
 import { mmToPx } from '../types/formats';
 
 export class PolygonGenerator implements Generator {
@@ -12,9 +12,8 @@ export class PolygonGenerator implements Generator {
   generate(t: number, params: Record<string, any>, seed: number): Shape {
     const rng = seededRandom(seed);
 
-    // Get parameters (convert size from mm to px)
-    const sizeMm = getMinMaxValue(params.size, rng);
-    const size = mmToPx(sizeMm);
+    // Size is already evaluated to a plain number by flowPathEngine
+    const size = mmToPx(params.size);
     const sides = Math.floor(params.sides);
     const regularity = params.regularity;
 

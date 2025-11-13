@@ -1,33 +1,176 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { CanvasWorking } from './components/CanvasWorking';
 import { Toolbar } from './components/Toolbar';
 import { LayersPanel } from './components/LayersPanel';
 import { LayerContentsPanel } from './components/LayerContentsPanel';
 import { ControlPanel } from './components/ControlPanel';
 import { GeneratorLibraryPanel } from './components/GeneratorLibraryPanel';
+import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
+import { TimelinePanel } from './components/TimelinePanel';
+import { TimelineProvider, useTimeline } from './contexts/TimelineContext';
 import { registerAllGenerators } from './generators';
 import { useStore } from './store/useStore';
+import { keyboardManager, setupKeyboardShortcuts } from './utils/keyboard';
 
-function App() {
+function AppContent() {
   const setTool = useStore((state) => state.setTool);
+  const undo = useStore((state) => state.undo);
+  const redo = useStore((state) => state.redo);
+  const copySelected = useStore((state) => state.copySelected);
+  const pasteClipboard = useStore((state) => state.pasteClipboard);
+  const deleteSelected = useStore((state) => state.deleteSelected);
+  const mirrorSelected = useStore((state) => state.mirrorSelected);
+  const deselectAll = useStore((state) => state.deselectAll);
+  const selection = useStore((state) => state.selection);
+  const project = useStore((state) => state.project);
+
+  const { showTimelinePanel, closeTimelinePanel } = useTimeline();
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
 
   useEffect(() => {
     // Register all generators on app startup
     registerAllGenerators();
   }, []);
 
-  // Handle keyboard shortcuts
+  // Setup keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Escape key - deselect tool
-      if (e.key === 'Escape') {
-        setTool('select');
-      }
-    };
+    // Register all shortcuts
+    keyboardManager.register({
+      key: 'z',
+      ctrl: true,
+      description: 'Undo',
+      action: undo,
+      category: 'general',
+    });
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setTool]);
+    keyboardManager.register({
+      key: 'z',
+      ctrl: true,
+      shift: true,
+      description: 'Redo',
+      action: redo,
+      category: 'general',
+    });
+
+    keyboardManager.register({
+      key: 'c',
+      ctrl: true,
+      description: 'Copy selected',
+      action: copySelected,
+      category: 'selection',
+    });
+
+    keyboardManager.register({
+      key: 'v',
+      ctrl: true,
+      description: 'Paste',
+      action: () => pasteClipboard({ x: 0.05, y: 0.05 }), // Offset by 5%
+      category: 'selection',
+    });
+
+    keyboardManager.register({
+      key: 'delete',
+      description: 'Delete selected',
+      action: deleteSelected,
+      category: 'selection',
+    });
+
+    keyboardManager.register({
+      key: 'backspace',
+      description: 'Delete selected',
+      action: deleteSelected,
+      category: 'selection',
+    });
+
+    keyboardManager.register({
+      key: 'm',
+      description: 'Mirror horizontal',
+      action: () => mirrorSelected('horizontal'),
+      category: 'transform',
+    });
+
+    keyboardManager.register({
+      key: 'm',
+      shift: true,
+      description: 'Mirror vertical',
+      action: () => mirrorSelected('vertical'),
+      category: 'transform',
+    });
+
+    keyboardManager.register({
+      key: 'a',
+      ctrl: true,
+      description: 'Select all',
+      action: () => {
+        // Select all objects in active layer
+        const activeLayer = project.layers.find((l) => !l.locked) || project.layers[0];
+        if (!activeLayer) return;
+
+        // Collect all IDs based on current selection type or default to standaloneGenerator
+        const type = selection.type === 'none' ? 'standaloneGenerator' : selection.type;
+        let ids: string[] = [];
+
+        if (type === 'flowPath') {
+          ids = activeLayer.flowPaths.map((fp) => fp.id);
+        } else if (type === 'standaloneGenerator') {
+          ids = activeLayer.standaloneGenerators.map((sg) => sg.id);
+        }
+
+        if (ids.length > 0) {
+          useStore.getState().selectMultiple(ids, type as 'flowPath' | 'standaloneGenerator');
+        }
+      },
+      category: 'selection',
+    });
+
+    keyboardManager.register({
+      key: 'escape',
+      description: 'Deselect / Cancel',
+      action: () => {
+        deselectAll();
+        setTool('select');
+      },
+      category: 'general',
+    });
+
+    keyboardManager.register({
+      key: '?',
+      shift: true, // Shift+? = ?
+      description: 'Show keyboard shortcuts',
+      action: () => setShowShortcutsModal(true),
+      category: 'general',
+    });
+
+    // Tool shortcuts (Note: plain 'v' without Ctrl - Ctrl+V is for Paste)
+    keyboardManager.register({
+      key: 'v',
+      description: 'Select tool',
+      action: () => setTool('select'),
+      category: 'tools',
+    });
+
+    keyboardManager.register({
+      key: 'p',
+      description: 'Draw flowpath tool',
+      action: () => setTool('flowpath'),
+      category: 'tools',
+    });
+
+    keyboardManager.register({
+      key: 'g',
+      description: 'Place generator tool',
+      action: () => setTool('standalone'),
+      category: 'tools',
+    });
+
+    // Setup global keyboard event listener
+    const cleanup = setupKeyboardShortcuts();
+
+    return () => {
+      cleanup();
+      keyboardManager.clear();
+    };
+  }, [setTool, undo, redo, copySelected, pasteClipboard, deleteSelected, mirrorSelected, deselectAll, selection.type, project]);
 
   return (
     <div
@@ -82,7 +225,24 @@ function App() {
         {/* Generator Library Panel (Far Right) */}
         <GeneratorLibraryPanel />
       </div>
+
+      {/* Keyboard Shortcuts Modal */}
+      <KeyboardShortcutsModal
+        isOpen={showShortcutsModal}
+        onClose={() => setShowShortcutsModal(false)}
+      />
+
+      {/* Timeline Panel */}
+      <TimelinePanel isOpen={showTimelinePanel} onClose={closeTimelinePanel} />
     </div>
+  );
+}
+
+function App() {
+  return (
+    <TimelineProvider>
+      <AppContent />
+    </TimelineProvider>
   );
 }
 

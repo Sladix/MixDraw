@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { GeneratorRegistry } from '../core/GeneratorRegistry';
 import paper from 'paper';
+import { seededRandom } from '../utils/random';
+import { evaluateAnimatableParams } from '../utils/animatable';
 
 // Component to render a generator preview
 function GeneratorPreview({ generatorType, seed }: { generatorType: string; seed: number }) {
@@ -24,7 +26,12 @@ function GeneratorPreview({ generatorType, seed }: { generatorType: string; seed
 
       // Generate the shape at t=0.5 with default params
       const defaultParams = GeneratorRegistry.getDefaultParams(generatorType);
-      const shape = generator.generate(0.5, defaultParams, seed);
+
+      // Evaluate animatable parameters before passing to generator
+      const rng = seededRandom(seed);
+      const evaluatedParams = evaluateAnimatableParams(defaultParams, 0.5, rng);
+
+      const shape = generator.generate(0.5, evaluatedParams, seed);
 
       // Calculate bounds to center and scale the shape
       const group = new paper.Group(shape.paths);

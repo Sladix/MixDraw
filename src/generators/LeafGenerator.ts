@@ -1,6 +1,6 @@
 import paper from 'paper';
 import type { Generator, Shape, ParamDefinition } from '../types';
-import { seededRandom, getMinMaxValue, lerp } from '../utils/random';
+import { seededRandom, lerp } from '../utils/random';
 import { mmToPx } from '../types/formats';
 
 export class LeafGenerator implements Generator {
@@ -12,9 +12,8 @@ export class LeafGenerator implements Generator {
   generate(t: number, params: Record<string, any>, seed: number): Shape {
     const rng = seededRandom(seed);
 
-    // Get size from range (convert from mm to px)
-    const sizeMm = getMinMaxValue(params.size, rng);
-    const size = mmToPx(sizeMm);
+    // Size is already evaluated to a plain number by flowPathEngine
+    const size = mmToPx(params.size);
     const curvature = params.curvature;
     const veins = params.veins;
 
