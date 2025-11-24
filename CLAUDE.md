@@ -1,3 +1,6 @@
+# Instructions
+Keep this file small.
+
 # Mix Draw - Claude Context
 
 ## What It Is
@@ -14,7 +17,7 @@ React 18 + TypeScript + Paper.js + Zustand + localStorage
 
 ### Key Concepts
 1. **Generators**: Pure functions creating shapes from `(t, params, seed) => Shape`
-   - Examples: Bird, Leaf, Polygon, Grass, Tree
+   - Examples: Bird, Leaf, Polygon, Grass, Tree, Glyph
    - All sizes in mm, converted with `mmToPx()`
    - NO strokeWidth params - controlled at layer level
 
@@ -30,6 +33,52 @@ React 18 + TypeScript + Paper.js + Zustand + localStorage
 
 4. **localStorage**: Browser-based project persistence
 
+### Advanced Systems
+
+#### MinMax Parameter System
+All numeric parameters support three modes:
+- **Static**: Single value (e.g., `density: 0.5`)
+- **Range**: Random per-instance (e.g., `density: { min: 0.3, max: 0.8 }`)
+- **Timeline-modulated Range**: Animated bounds along curve
+
+**Key Components:**
+- `MinMaxControl.tsx`: UI toggle (🔗 single / ○ range), timeline button (⏱)
+- `evaluateAnimatableParameter()` in `utils/animatable.ts`: Resolves value at position t
+- Type guards: `isMinMaxValue()`, `isAnimatableMinMaxValue()`
+- Timeline naming: FlowPath params use `'density'`, generator params use `'gen.{id}.{param}'`
+
+**Evaluation Flow:**
+```typescript
+// At each point t along curve:
+1. Check for timeline by param name
+2. If timeline exists: Use timeline.evaluate(t) ± 10% variation
+3. If MinMaxValue: Random between min/max
+4. If static: Pass through
+```
+
+#### Bezier Editing System
+Visual manipulation of FlowPath curves:
+- **Coordinate system**: Normalized (0-1) stored in Zustand, converted to absolute pixels for render
+- **Edit mode**: Click curve → Shows draggable points (blue) and handles (red/green)
+- **Arc-length parameterization**: `bezier.ts` provides `calculatePointTValue()` for uniform distribution
+- **Grid snap**: Optional snap-to-grid with `grid.ts` utilities
+- **Selection state**: Tracks `editingBezier`, `selectedPointIndex`, `selectedHandleType`
+
+**Why normalized coordinates?** Format independence - same curve works on A3/A4.
+
+#### Packed Fill Mode
+Collision-aware distribution for maximum density:
+- **Algorithm**: Poisson disk sampling + per-instance bounds checking
+- **Packing modes**:
+  - `tight`: No overlap
+  - `normal`: 10% overlap (default)
+  - `loose`: 25% overlap
+  - `allow-overlap`: No collision detection
+- **MinSpacing**: -2mm to +5mm (negative = tighter, positive = more space)
+- **Density modes**:
+  - `visual`: Adjusts for shape size (default)
+  - `fixed-count`: Exact count regardless of size
+
 ### Critical Files
 ```
 src/
@@ -40,12 +89,22 @@ src/
 │   ├── storage.ts            # localStorage project management
 │   └── export.ts             # SVG export
 ├── generators/
-│   ├── [Name]Generator.ts    # Bird, Leaf, Polygon, Grass, Tree
+│   ├── [Name]Generator.ts    # Bird, Leaf, Polygon, Grass, Tree, Glyph
 │   └── index.ts              # Registration (singleton guard)
 ├── components/
 │   ├── CanvasWorking.tsx     # THE ONLY CANVAS - applies layer strokeWidth
 │   ├── ControlPanel.tsx      # Format, seed, save/load, export
-│   └── LayersPanel.tsx       # Layer list with strokeWidth control
+│   ├── LayersPanel.tsx       # Layer list with strokeWidth control
+│   ├── BezierEditOverlay.tsx # Interactive bezier curve point editing
+│   ├── GridOverlay.tsx       # Compositional grid system with snap
+│   ├── ParameterControl.tsx  # Unified parameter UI component
+│   └── TimelinePanel.tsx     # Timeline editor with presets
+├── contexts/
+│   └── TimelineContext.tsx   # Timeline state management
+├── utils/
+│   ├── animatable.ts         # MinMax/timeline parameter evaluation
+│   ├── bezier.ts             # Arc-length parameterization
+│   └── grid.ts               # Grid snapping utilities
 └── store/useStore.ts         # Zustand - single source of truth
 ```
 
@@ -101,11 +160,14 @@ GeneratorRegistry.register(new NewGenerator());
 ```
 
 ## Recent Features (2025)
+- **MinMax parameters**: Static/range/timeline modes for all numeric params
+- **Glyph generator**: Grid-based typographic character synthesis
+- **Bezier editing**: Visual point/handle manipulation with grid snap
+- **Packed fill mode**: Collision detection with packing tolerance
+- **Timeline enhancements**: Presets, random generation, inline previews
+- **Copy/paste config**: Duplicate FlowPath settings
 - 2D tube filling (generators fill area, not just line)
-- Density/spread modifiers with custom curves
 - Layer-level strokeWidth (0.3mm default)
-- localStorage save/load with project browser modal
-- Grass + Tree generators
 
 ## Quick Debug
 1. F12 console → Look for "🔄 Render effect triggered"
@@ -118,6 +180,12 @@ GeneratorRegistry.register(new NewGenerator());
 - **Zustand = source of truth** - Paper.js objects are ephemeral
 - **Layer settings override** - color/strokeWidth applied during render
 - **Single canvas component** - CanvasWorking.tsx only
+- **MinMax flexibility** - All numeric params support static/range/timeline modes
+- **Normalized coordinates** - Bezier curves stored as 0-1 for format independence
+- **Timeline namespacing** - Generator params use `'gen.{id}.{param}'` format
+- **Arc-length parameterization** - Uniform distribution along curves
+- **Collision-aware packing** - Packed mode respects shape bounds
+  - Long-term: Integrate into flex/grid layout
 
 ## Flow
 User action → Zustand update → Canvas render effect → flowPathEngine → tubeFilling → Generator → Render with layer settings

@@ -3,8 +3,10 @@ import { createContext, useContext, useState, ReactNode } from 'react';
 interface TimelineContextType {
   showTimelinePanel: boolean;
   selectedParam: string | null;
+  scrubberPosition: number;
   openTimelinePanel: (paramName: string) => void;
   closeTimelinePanel: () => void;
+  setScrubberPosition: (position: number) => void;
 }
 
 const TimelineContext = createContext<TimelineContextType | undefined>(undefined);
@@ -12,6 +14,7 @@ const TimelineContext = createContext<TimelineContextType | undefined>(undefined
 export function TimelineProvider({ children }: { children: ReactNode }) {
   const [showTimelinePanel, setShowTimelinePanel] = useState(false);
   const [selectedParam, setSelectedParam] = useState<string | null>(null);
+  const [scrubberPosition, setScrubberPosition] = useState(0.5);
 
   const openTimelinePanel = (paramName: string) => {
     setSelectedParam(paramName);
@@ -25,7 +28,14 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
 
   return (
     <TimelineContext.Provider
-      value={{ showTimelinePanel, selectedParam, openTimelinePanel, closeTimelinePanel }}
+      value={{
+        showTimelinePanel,
+        selectedParam,
+        scrubberPosition,
+        openTimelinePanel,
+        closeTimelinePanel,
+        setScrubberPosition
+      }}
     >
       {children}
     </TimelineContext.Provider>

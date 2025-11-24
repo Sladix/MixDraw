@@ -1,12 +1,14 @@
 import { useStore } from '../store/useStore';
 import { GeneratorRegistry } from '../core/GeneratorRegistry';
 import type { ParamDefinition } from '../types';
-import { MinMaxControl } from './MinMaxControl';
+import { ParameterControl } from './ParameterControl';
+import { useTimeline } from '../contexts/TimelineContext';
 
 export function StandaloneGeneratorPropertiesPanel() {
   const project = useStore((state) => state.project);
   const selection = useStore((state) => state.selection);
   const updateStandaloneGenerator = useStore((state) => state.updateStandaloneGenerator);
+  const { openTimelinePanel } = useTimeline();
 
   if (selection.type !== 'standaloneGenerator' || !selection.id) {
     return null;
@@ -60,94 +62,26 @@ export function StandaloneGeneratorPropertiesPanel() {
     currentValue: any,
     onChange: (value: any) => void
   ) => {
-    const value = currentValue !== undefined ? currentValue : paramDef.defaultValue;
+    // Build timeline parameter name for standalone generator (e.g., "standalone.gen123.size")
+    const timelineParamName = `standalone.${selection.id}.${paramDef.name}`;
 
-    switch (paramDef.type) {
-      case 'slider':
-      case 'number':
-        return (
-          <label
-            key={paramDef.name}
-            style={{ display: 'block', fontSize: '10px', marginTop: '6px', marginBottom: '4px' }}
-          >
-            {paramDef.label}: {typeof value === 'number' ? value.toFixed(2) : value}
-            <input
-              type="range"
-              min={paramDef.min}
-              max={paramDef.max}
-              step={paramDef.step || 0.1}
-              value={value}
-              onChange={(e) => onChange(parseFloat(e.target.value))}
-              style={{
-                display: 'block',
-                width: '100%',
-                marginTop: '2px',
-              }}
-            />
-          </label>
-        );
+    // Check if there's an active timeline for this parameter
+    // Note: Standalone generators don't currently have timeline support in the data model
+    // but we're setting up the infrastructure for future support
+    const hasTimeline = false; // TODO: Add timeline support to StandaloneGenerator type
+    const paramTimeline = undefined;
 
-      case 'checkbox':
-        return (
-          <label
-            key={paramDef.name}
-            style={{ display: 'flex', alignItems: 'center', fontSize: '10px', marginTop: '6px', cursor: 'pointer' }}
-          >
-            <input
-              type="checkbox"
-              checked={value || false}
-              onChange={(e) => onChange(e.target.checked)}
-              style={{ marginRight: '6px', cursor: 'pointer' }}
-            />
-            {paramDef.label}
-          </label>
-        );
-
-      case 'select':
-        return (
-          <label key={paramDef.name} style={{ display: 'block', fontSize: '10px', marginTop: '6px' }}>
-            {paramDef.label}
-            <select
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              style={{
-                display: 'block',
-                width: '100%',
-                padding: '4px',
-                marginTop: '2px',
-                backgroundColor: '#1a1a1a',
-                color: 'white',
-                border: '1px solid #333',
-                borderRadius: '3px',
-                fontSize: '10px',
-              }}
-            >
-              {paramDef.options?.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </label>
-        );
-
-      case 'minmax':
-        return (
-          <MinMaxControl
-            key={paramDef.name}
-            label={paramDef.label}
-            value={value}
-            min={paramDef.min || 0}
-            max={paramDef.max || 100}
-            step={paramDef.step}
-            unit={paramDef.unit}
-            onChange={onChange}
-          />
-        );
-
-      default:
-        return null;
-    }
+    return (
+      <ParameterControl
+        key={paramDef.name}
+        paramDef={paramDef}
+        value={currentValue}
+        onChange={onChange}
+        onCreateTimeline={() => openTimelinePanel(timelineParamName)}
+        hasTimeline={hasTimeline}
+        timeline={paramTimeline}
+      />
+    );
   };
 
   return (

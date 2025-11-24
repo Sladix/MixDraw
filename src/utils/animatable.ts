@@ -35,7 +35,8 @@ export function evaluateAnimatableParameter(
       if (timeline && timeline.enabled) {
         // Timeline modulates the entire range
         // The timeline value represents the interpolation factor between min and max
-        const timelineValue = evaluateTimeline(timeline, t);
+        const defaultValue = (value.min + value.max) / 2;
+        const timelineValue = evaluateTimeline(t, timeline.keyframes, defaultValue);
 
         // Remap timeline value (typically 0-1) to the min-max range
         // This allows the timeline to dynamically control the range bounds

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { GeneratorRegistry } from '../core/GeneratorRegistry';
-import type { ParamDefinition } from '../types';
+import type { ParamDefinition, MinMaxValue } from '../types';
+import { isMinMaxValue } from '../types';
 import { CollapsibleSection } from './CollapsibleSection';
 import { ModifierList } from './ModifierList';
+import { ParameterControl } from './ParameterControl';
 import { MinMaxControl } from './MinMaxControl';
-import { TimelinePreview } from './TimelinePreview';
 import { useTimeline } from '../contexts/TimelineContext';
 
 export function FlowPathPropertiesPanel() {
@@ -15,15 +16,19 @@ export function FlowPathPropertiesPanel() {
   const copyFlowPathConfig = useStore((state) => state.copyFlowPathConfig);
   const pasteFlowPathConfig = useStore((state) => state.pasteFlowPathConfig);
   const clipboard = useStore((state) => state.clipboard);
+  const addGeneratorToFlowPath = useStore((state) => state.addGeneratorToFlowPath);
+  const removeGeneratorFromFlowPath = useStore((state) => state.removeGeneratorFromFlowPath);
   const { openTimelinePanel } = useTimeline();
 
   // State for collapsed sections
   const [collapsedSections, setCollapsedSections] = useState({
     basic: false,
     generators: false,
-    timeline: false,
     modifiers: false,
   });
+
+  // State for generator picker dropdown
+  const [showGeneratorPicker, setShowGeneratorPicker] = useState(false);
 
   const toggleSection = (section: keyof typeof collapsedSections) => {
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -97,8 +102,6 @@ export function FlowPathPropertiesPanel() {
     onChange: (value: any) => void,
     generatorId?: string, // Optional: for generator-specific params
   ) => {
-    const value = currentValue !== undefined ? currentValue : paramDef.defaultValue;
-
     // Build timeline parameter name (e.g., "gen.abc123.size")
     const timelineParamName = generatorId ? `gen.${generatorId}.${paramDef.name}` : paramDef.name;
 
@@ -107,100 +110,22 @@ export function FlowPathPropertiesPanel() {
       tl => tl.paramName === timelineParamName && tl.enabled
     ) || false;
 
-    switch (paramDef.type) {
-      case 'slider':
-      case 'number':
-        return (
-          <label
-            key={paramDef.name}
-            style={{ display: 'block', fontSize: '10px', marginTop: '6px', marginBottom: '4px' }}
-          >
-            {paramDef.label}: {typeof value === 'number' ? value.toFixed(2) : value}
-            <input
-              type="range"
-              min={paramDef.min}
-              max={paramDef.max}
-              step={paramDef.step || 0.1}
-              value={value}
-              onChange={(e) => onChange(parseFloat(e.target.value))}
-              style={{
-                display: 'block',
-                width: '100%',
-                marginTop: '2px',
-              }}
-            />
-          </label>
-        );
+    // Find the timeline for this parameter
+    const paramTimeline = selectedFlowPath.timelines?.find(
+      tl => tl.paramName === timelineParamName
+    );
 
-      case 'checkbox':
-        return (
-          <label
-            key={paramDef.name}
-            style={{ display: 'flex', alignItems: 'center', fontSize: '10px', marginTop: '6px', cursor: 'pointer' }}
-          >
-            <input
-              type="checkbox"
-              checked={value || false}
-              onChange={(e) => onChange(e.target.checked)}
-              style={{ marginRight: '6px', cursor: 'pointer' }}
-            />
-            {paramDef.label}
-          </label>
-        );
-
-      case 'select':
-        return (
-          <label key={paramDef.name} style={{ display: 'block', fontSize: '10px', marginTop: '6px' }}>
-            {paramDef.label}
-            <select
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              style={{
-                display: 'block',
-                width: '100%',
-                padding: '4px',
-                marginTop: '2px',
-                backgroundColor: '#1a1a1a',
-                color: 'white',
-                border: '1px solid #333',
-                borderRadius: '3px',
-                fontSize: '10px',
-              }}
-            >
-              {paramDef.options?.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </label>
-        );
-
-      case 'minmax':
-        // Find the timeline for this parameter
-        const paramTimeline = selectedFlowPath.timelines?.find(
-          tl => tl.paramName === timelineParamName
-        );
-
-        return (
-          <MinMaxControl
-            key={paramDef.name}
-            label={paramDef.label}
-            value={value}
-            min={paramDef.min || 0}
-            max={paramDef.max || 100}
-            step={paramDef.step}
-            unit={paramDef.unit}
-            onChange={onChange}
-            onCreateTimeline={() => openTimelinePanel(timelineParamName)}
-            hasTimeline={hasTimeline}
-            timeline={paramTimeline}
-          />
-        );
-
-      default:
-        return null;
-    }
+    return (
+      <ParameterControl
+        key={paramDef.name}
+        paramDef={paramDef}
+        value={currentValue}
+        onChange={onChange}
+        onCreateTimeline={() => openTimelinePanel(timelineParamName)}
+        hasTimeline={hasTimeline}
+        timeline={paramTimeline}
+      />
+    );
   };
 
   const handleCopyConfig = () => {
@@ -317,54 +242,48 @@ export function FlowPathPropertiesPanel() {
         </label>
 
         {/* Density */}
-        <label style={{ display: 'block', fontSize: '11px', marginBottom: '4px' }}>
-          Density: {selectedFlowPath.distributionParams.density.toFixed(2)} shapes/mm
-          {selectedFlowPath.generators.length > 1 && (
-            <span style={{ fontSize: '9px', color: '#666', marginLeft: '6px' }}>
-              ({selectedFlowPath.generators.length} gen × {(selectedFlowPath.distributionParams.density / selectedFlowPath.generators.length).toFixed(2)}/mm each)
-            </span>
-          )}
-          <input
-            type="range"
-            min="0.1"
-            max="2"
-            step="0.1"
+        <div style={{ marginBottom: '12px' }}>
+          <MinMaxControl
+            label="Density"
             value={selectedFlowPath.distributionParams.density}
-            onChange={(e) => handleDistributionChange('density', parseFloat(e.target.value))}
-            style={{
-              display: 'block',
-              width: '100%',
-              marginTop: '4px',
-            }}
+            min={0.1}
+            max={2}
+            step={0.1}
+            unit="shapes/mm"
+            onChange={(value) => handleDistributionChange('density', value)}
+            onCreateTimeline={() => openTimelinePanel('density')}
+            hasTimeline={!!selectedFlowPath.timelines?.find((tl) => tl.paramName === 'density')}
+            timeline={selectedFlowPath.timelines?.find((tl) => tl.paramName === 'density')}
           />
-          <span style={{ fontSize: '9px', color: '#aaa', display: 'block', marginTop: '4px' }}>
-            💡 Use Timeline Keyframes to animate density along the path
-          </span>
-        </label>
+          {selectedFlowPath.generators.length > 1 && (
+            <div style={{ fontSize: '9px', color: '#666', marginTop: '6px' }}>
+              {selectedFlowPath.generators.length} generators × {
+                isMinMaxValue(selectedFlowPath.distributionParams.density)
+                  ? `${((selectedFlowPath.distributionParams.density.min + selectedFlowPath.distributionParams.density.max) / 2 / selectedFlowPath.generators.length).toFixed(2)}`
+                  : (selectedFlowPath.distributionParams.density / selectedFlowPath.generators.length).toFixed(2)
+              }/mm each (avg)
+            </div>
+          )}
+        </div>
 
         {/* Spread */}
-        <label style={{ display: 'block', fontSize: '11px', marginTop: '12px', marginBottom: '4px' }}>
-          Spread: {(selectedFlowPath.flowParams.spread ?? 10).toFixed(1)} mm
-          <span style={{ fontSize: '9px', color: '#666', display: 'block', marginTop: '2px' }}>
-            Width of the tube area (both sides of path)
-          </span>
-          <input
-            type="range"
-            min="1"
-            max="100"
-            step="1"
+        <div style={{ marginBottom: '12px' }}>
+          <MinMaxControl
+            label="Spread"
             value={selectedFlowPath.flowParams.spread ?? 10}
-            onChange={(e) => handleFlowChange('spread', parseFloat(e.target.value))}
-            style={{
-              display: 'block',
-              width: '100%',
-              marginTop: '4px',
-            }}
+            min={1}
+            max={100}
+            step={1}
+            unit="mm"
+            onChange={(value) => handleFlowChange('spread', value)}
+            onCreateTimeline={() => openTimelinePanel('spread')}
+            hasTimeline={!!selectedFlowPath.timelines?.find((tl) => tl.paramName === 'spread')}
+            timeline={selectedFlowPath.timelines?.find((tl) => tl.paramName === 'spread')}
           />
-          <span style={{ fontSize: '9px', color: '#aaa', display: 'block', marginTop: '4px' }}>
-            💡 Use Timeline Keyframes to animate spread along the path
-          </span>
-        </label>
+          <div style={{ fontSize: '9px', color: '#666', marginTop: '6px' }}>
+            Width of the tube area (both sides of path)
+          </div>
+        </div>
 
         {/* Fill Mode */}
         <label style={{ display: 'block', fontSize: '11px', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #333', marginBottom: '4px' }}>
@@ -489,28 +408,22 @@ export function FlowPathPropertiesPanel() {
         </div>
 
         {/* Follow Curve */}
-        <label style={{ display: 'block', fontSize: '11px', marginTop: '12px', marginBottom: '4px' }}>
-          Follow Curve: {selectedFlowPath.flowParams.followCurve.toFixed(2)}
-          <span style={{ fontSize: '9px', color: '#666', display: 'block', marginTop: '2px' }}>
-            Align shapes with path direction (0 = no rotation, 1 = full alignment)
-          </span>
-          <span style={{ fontSize: '9px', color: '#aaa', marginTop: '2px' }}>
-            💡 Use Timeline Keyframes to animate rotation along the path
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.1"
+        <div style={{ marginBottom: '12px' }}>
+          <MinMaxControl
+            label="Follow Curve"
             value={selectedFlowPath.flowParams.followCurve}
-            onChange={(e) => handleFlowChange('followCurve', parseFloat(e.target.value))}
-            style={{
-              display: 'block',
-              width: '100%',
-              marginTop: '6px',
-            }}
+            min={0}
+            max={1}
+            step={0.1}
+            onChange={(value) => handleFlowChange('followCurve', value)}
+            onCreateTimeline={() => openTimelinePanel('followCurve')}
+            hasTimeline={!!selectedFlowPath.timelines?.find((tl) => tl.paramName === 'followCurve')}
+            timeline={selectedFlowPath.timelines?.find((tl) => tl.paramName === 'followCurve')}
           />
-        </label>
+          <div style={{ fontSize: '9px', color: '#666', marginTop: '6px' }}>
+            Align shapes with path direction (0 = no rotation, 1 = full alignment)
+          </div>
+        </div>
       </CollapsibleSection>
 
       {/* Generators */}
@@ -519,6 +432,75 @@ export function FlowPathPropertiesPanel() {
         collapsed={collapsedSections.generators}
         onToggle={() => toggleSection('generators')}
       >
+        {/* Add Generator Button */}
+        <div style={{ marginBottom: '10px', position: 'relative' }}>
+          <button
+            onClick={() => setShowGeneratorPicker(!showGeneratorPicker)}
+            style={{
+              width: '100%',
+              padding: '8px',
+              backgroundColor: '#4a9eff',
+              border: 'none',
+              borderRadius: '4px',
+              color: '#fff',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: 'bold',
+            }}
+          >
+            + Add Generator
+          </button>
+
+          {/* Generator Picker Dropdown */}
+          {showGeneratorPicker && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                marginTop: '4px',
+                backgroundColor: '#2a2a2a',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                maxHeight: '200px',
+                overflowY: 'auto',
+                zIndex: 1000,
+              }}
+            >
+              {GeneratorRegistry.list().map((gen) => (
+                <button
+                  key={gen.type}
+                  onClick={() => {
+                    addGeneratorToFlowPath(selectedFlowPath.id, gen.type);
+                    setShowGeneratorPicker(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderBottom: '1px solid #333',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    textAlign: 'left',
+                    textTransform: 'capitalize',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#3a3a3a';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  {gen.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         {selectedFlowPath.generators.map((gen, index) => {
           const generator = GeneratorRegistry.get(gen.type);
           const paramDefs = generator?.getParamDefinitions() || [];
@@ -532,10 +514,28 @@ export function FlowPathPropertiesPanel() {
                 borderRadius: '4px',
                 marginBottom: '8px',
                 border: '1px solid #333',
+                position: 'relative',
               }}
             >
-              <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '8px', textTransform: 'capitalize' }}>
-                {gen.type} (Weight: {gen.weight})
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 'bold', textTransform: 'capitalize' }}>
+                  {gen.type} (Weight: {gen.weight})
+                </div>
+                <button
+                  onClick={() => removeGeneratorFromFlowPath(selectedFlowPath.id, gen.id)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#ff4444',
+                    cursor: 'pointer',
+                    fontSize: '16px',
+                    padding: '0 4px',
+                    lineHeight: '1',
+                  }}
+                  title="Remove generator"
+                >
+                  ×
+                </button>
               </div>
 
               {/* Follow Normal Checkbox */}
@@ -586,40 +586,6 @@ export function FlowPathPropertiesPanel() {
         />
       </CollapsibleSection>
 
-      {/* Timeline Keyframes */}
-      <CollapsibleSection
-        title="Timeline Keyframes"
-        collapsed={collapsedSections.timeline}
-        onToggle={() => toggleSection('timeline')}
-      >
-        <div style={{ fontSize: '10px', color: '#aaa', marginBottom: '12px' }}>
-          Animate parameters along the flowPath using keyframes
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <TimelinePreview
-            timeline={selectedFlowPath.timelines?.find((tl) => tl.paramName === 'density')}
-            defaultValue={selectedFlowPath.distributionParams.density}
-            paramName="density"
-            paramLabel="Density"
-            onClick={openTimelinePanel}
-          />
-          <TimelinePreview
-            timeline={selectedFlowPath.timelines?.find((tl) => tl.paramName === 'spread')}
-            defaultValue={selectedFlowPath.flowParams.spread}
-            paramName="spread"
-            paramLabel="Spread"
-            onClick={openTimelinePanel}
-          />
-          <TimelinePreview
-            timeline={selectedFlowPath.timelines?.find((tl) => tl.paramName === 'followCurve')}
-            defaultValue={selectedFlowPath.flowParams.followCurve}
-            paramName="followCurve"
-            paramLabel="Follow Curve"
-            onClick={openTimelinePanel}
-          />
-        </div>
-      </CollapsibleSection>
 
     </div>
   );

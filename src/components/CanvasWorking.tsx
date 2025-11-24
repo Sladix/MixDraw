@@ -6,7 +6,12 @@ import { GeneratorRegistry } from '../core/GeneratorRegistry';
 import { PAPER_FORMATS, getEffectiveDimensions } from '../types/formats';
 import { absoluteToNormalized, normalizedToAbsolute } from '../utils/coordinates';
 import { hitTestObjects } from '../utils/hitTest';
+import { snapToGrid } from '../utils/grid';
+import { calculatePointTValue } from '../utils/bezier';
 import { SelectionOverlay } from './SelectionOverlay';
+import { BezierEditOverlay } from './BezierEditOverlay';
+import { GridOverlay } from './GridOverlay';
+import { useTimeline } from '../contexts/TimelineContext';
 
 export function CanvasWorking() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -24,6 +29,14 @@ export function CanvasWorking() {
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  // Bezier editing state
+  const [bezierDragType, setBezierDragType] = useState<'point' | 'handle' | null>(null);
+  const [bezierDragData, setBezierDragData] = useState<{
+    pointIndex: number;
+    handleType?: 'in' | 'out';
+    startPos: { x: number; y: number };
+  } | null>(null);
+
   const project = useStore((state) => state.project);
   const zoom = useStore((state) => state.zoom);
   const currentTool = useStore((state) => state.currentTool);
@@ -38,6 +51,22 @@ export function CanvasWorking() {
   const selection = useStore((state) => state.selection);
   const moveSelected = useStore((state) => state.moveSelected);
   const pushToHistory = useStore((state) => state.pushToHistory);
+
+  // Grid state
+  const gridSnapEnabled = useStore((state) => state.gridSnapEnabled);
+  const gridSize = useStore((state) => state.gridSize);
+
+  // Timeline context
+  const { setScrubberPosition } = useTimeline();
+
+  // Bezier editing actions
+  const enableBezierEditing = useStore((state) => state.enableBezierEditing);
+  const disableBezierEditing = useStore((state) => state.disableBezierEditing);
+  const selectBezierPoint = useStore((state) => state.selectBezierPoint);
+  const deselectBezierPoint = useStore((state) => state.deselectBezierPoint);
+  const moveBezierPoint = useStore((state) => state.moveBezierPoint);
+  const moveBezierHandle = useStore((state) => state.moveBezierHandle);
+  const deleteBezierPoint = useStore((state) => state.deleteBezierPoint);
 
   // Helper: Calculate scale factor for content rendering
   const getScaleFactor = useCallback(() => {
@@ -381,6 +410,135 @@ export function CanvasWorking() {
     />
   ) : null;
 
+  // Render BezierEditOverlay for curve point editing
+  const bezierEditOverlay = isInitialized && projectRef.current ? (
+    <BezierEditOverlay
+      paperProject={projectRef.current}
+      scaleFactor={getScaleFactor()}
+      canvasCenter={{ x: canvasSize.width / 2, y: canvasSize.height / 2 }}
+    />
+  ) : null;
+
+  // Render GridOverlay for grid display
+  const gridOverlay = isInitialized && projectRef.current ? (
+    <GridOverlay
+      paperProject={projectRef.current}
+      scaleFactor={getScaleFactor()}
+      canvasCenter={{ x: canvasSize.width / 2, y: canvasSize.height / 2 }}
+    />
+  ) : null;
+
+  // Helper: Apply handle symmetry
+  const applyHandleSymmetry = useCallback((flowPathId: string, pointIndex: number, handleType: 'in' | 'out') => {
+    // Find the flowPath
+    let flowPath = null;
+    for (const layer of project.layers) {
+      const fp = layer.flowPaths.find((f) => f.id === flowPathId);
+      if (fp) {
+        flowPath = fp;
+        break;
+      }
+    }
+
+    if (!flowPath || !flowPath.bezierCurve.segments[pointIndex]) return;
+
+    const seg = flowPath.bezierCurve.segments[pointIndex];
+
+    // Get the handle to mirror
+    const sourceHandle = handleType === 'in' ? seg.handleIn : seg.handleOut;
+    if (!sourceHandle) return;
+
+    // Mirror it to the opposite handle
+    const targetHandleType = handleType === 'in' ? 'out' : 'in';
+    const mirroredHandle = {
+      x: -sourceHandle.x,
+      y: -sourceHandle.y,
+    };
+
+    // Apply the mirrored handle
+    pushToHistory();
+    moveBezierHandle(flowPathId, pointIndex, targetHandleType, mirroredHandle.x, mirroredHandle.y);
+  }, [project, moveBezierHandle, pushToHistory]);
+
+  // Helper: Hit test bezier overlay elements (points and handles)
+  const hitTestBezierOverlay = useCallback((point: paper.Point) => {
+    if (!selection.editingBezier || !selection.id) return null;
+
+    // Find the selected FlowPath
+    let selectedFlowPath = null;
+    for (const layer of project.layers) {
+      const fp = layer.flowPaths.find((f) => f.id === selection.id);
+      if (fp) {
+        selectedFlowPath = fp;
+        break;
+      }
+    }
+
+    if (!selectedFlowPath || !selectedFlowPath.bezierCurve.segments) return null;
+
+    const format = PAPER_FORMATS[paperFormat];
+    const dims = getEffectiveDimensions(format, paperOrientation);
+    const pointRadius = 6 / getScaleFactor(); // Account for scaling
+    const handleRadius = 4 / getScaleFactor();
+
+    // Test handles first (smaller targets, should be prioritized)
+    const selectedPointIndex = selection.selectedPointIndex ?? null;
+    if (selectedPointIndex !== null) {
+      const seg = selectedFlowPath.bezierCurve.segments[selectedPointIndex];
+      if (seg && seg.point) {
+        const absolutePoint = normalizedToAbsolute(
+          { x: seg.point.x, y: seg.point.y },
+          paperFormat,
+          paperOrientation
+        );
+        const pointPos = new paper.Point(absolutePoint.x, absolutePoint.y);
+
+        // Test handleIn
+        if (seg.handleIn) {
+          const handleInAbsolute = new paper.Point(
+            seg.handleIn.x * dims.widthPx,
+            seg.handleIn.y * dims.heightPx
+          );
+          const handleInPos = pointPos.add(handleInAbsolute);
+          if (point.getDistance(handleInPos) <= handleRadius) {
+            return { type: 'handle' as const, pointIndex: selectedPointIndex, handleType: 'in' as const };
+          }
+        }
+
+        // Test handleOut
+        if (seg.handleOut) {
+          const handleOutAbsolute = new paper.Point(
+            seg.handleOut.x * dims.widthPx,
+            seg.handleOut.y * dims.heightPx
+          );
+          const handleOutPos = pointPos.add(handleOutAbsolute);
+          if (point.getDistance(handleOutPos) <= handleRadius) {
+            return { type: 'handle' as const, pointIndex: selectedPointIndex, handleType: 'out' as const };
+          }
+        }
+      }
+    }
+
+    // Test points
+    for (let i = 0; i < selectedFlowPath.bezierCurve.segments.length; i++) {
+      const seg = selectedFlowPath.bezierCurve.segments[i];
+      if (!seg.point) continue;
+
+      const absolutePoint = normalizedToAbsolute(
+        { x: seg.point.x, y: seg.point.y },
+        paperFormat,
+        paperOrientation
+      );
+      const pointPos = new paper.Point(absolutePoint.x, absolutePoint.y);
+
+      if (point.getDistance(pointPos) <= pointRadius) {
+        return { type: 'point' as const, pointIndex: i };
+      }
+    }
+
+    return null;
+  }, [selection, project, paperFormat, paperOrientation, getScaleFactor]);
+
   // Mouse handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!projectRef.current || !canvasRef.current) return;
@@ -395,6 +553,106 @@ export function CanvasWorking() {
 
     const firstLayer = project.layers.find((l) => !l.locked);
     if (!firstLayer) return;
+
+    // Check if we're in bezier editing mode
+    if (currentTool === 'select' && selection.editingBezier) {
+      const bezierHit = hitTestBezierOverlay(point);
+      if (bezierHit) {
+        if (bezierHit.type === 'point') {
+          // Shift+click to delete point
+          if (e.shiftKey && selection.id) {
+            deleteBezierPoint(selection.id, bezierHit.pointIndex);
+            return;
+          }
+          // Select point and start dragging
+          selectBezierPoint(bezierHit.pointIndex);
+
+          // Update timeline scrubber to the t-value of this point
+          // Find the flowPath and reconstruct its Paper.js path to calculate t
+          let selectedFlowPath = null;
+          for (const layer of project.layers) {
+            const fp = layer.flowPaths.find((f) => f.id === selection.id);
+            if (fp) {
+              selectedFlowPath = fp;
+              break;
+            }
+          }
+
+          if (selectedFlowPath) {
+            // Reconstruct Paper.js path to calculate curve length
+            const reconstructedPath = new paper.Path();
+            const format = PAPER_FORMATS[paperFormat];
+            const dims = getEffectiveDimensions(format, paperOrientation);
+
+            selectedFlowPath.bezierCurve.segments.forEach((seg: any) => {
+              if (seg.point) {
+                const absolutePoint = normalizedToAbsolute(
+                  { x: seg.point.x, y: seg.point.y },
+                  paperFormat,
+                  paperOrientation
+                );
+                const point = new paper.Point(absolutePoint.x, absolutePoint.y);
+
+                let handleIn = undefined;
+                let handleOut = undefined;
+
+                if (seg.handleIn) {
+                  handleIn = new paper.Point(
+                    seg.handleIn.x * dims.widthPx,
+                    seg.handleIn.y * dims.heightPx
+                  );
+                }
+
+                if (seg.handleOut) {
+                  handleOut = new paper.Point(
+                    seg.handleOut.x * dims.widthPx,
+                    seg.handleOut.y * dims.heightPx
+                  );
+                }
+
+                reconstructedPath.add(new paper.Segment(point, handleIn, handleOut));
+              }
+            });
+
+            // Calculate t-value for this point
+            const tValue = calculatePointTValue(reconstructedPath, bezierHit.pointIndex);
+            setScrubberPosition(tValue);
+
+            // Clean up temporary path
+            reconstructedPath.remove();
+          }
+
+          setBezierDragType('point');
+          setBezierDragData({
+            pointIndex: bezierHit.pointIndex,
+            startPos: { x, y },
+          });
+          setIsDragging(true);
+          setDragStart({ x, y });
+          pushToHistory();
+        } else if (bezierHit.type === 'handle') {
+          // Shift+click to apply symmetry
+          if (e.shiftKey && selection.id) {
+            applyHandleSymmetry(selection.id, bezierHit.pointIndex, bezierHit.handleType);
+            return;
+          }
+          // Start dragging handle
+          setBezierDragType('handle');
+          setBezierDragData({
+            pointIndex: bezierHit.pointIndex,
+            handleType: bezierHit.handleType,
+            startPos: { x, y },
+          });
+          setIsDragging(true);
+          setDragStart({ x, y });
+          pushToHistory();
+        }
+        return;
+      }
+      // Click on empty space - deselect point but stay in bezier edit mode
+      deselectBezierPoint();
+      return;
+    }
 
     if (currentTool === 'flowpath') {
       handleFlowPathClick(point, firstLayer.id);
@@ -413,25 +671,90 @@ export function CanvasWorking() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    // Handle bezier point/handle dragging
+    if (bezierDragType && bezierDragData && selection.id) {
+      const currentPoint = screenToVirtual(x, y);
+      const format = PAPER_FORMATS[paperFormat];
+      const dims = getEffectiveDimensions(format, paperOrientation);
+
+      if (bezierDragType === 'point') {
+        // Apply grid snapping if enabled
+        let finalPoint = currentPoint;
+        if (gridSnapEnabled) {
+          finalPoint = snapToGrid(currentPoint, gridSize, dims.widthPx, dims.heightPx);
+        }
+
+        // Convert to normalized coordinates
+        const normalized = absoluteToNormalized(
+          { x: finalPoint.x, y: finalPoint.y },
+          paperFormat,
+          paperOrientation
+        );
+        moveBezierPoint(selection.id, bezierDragData.pointIndex, normalized.x, normalized.y);
+      } else if (bezierDragType === 'handle' && bezierDragData.handleType) {
+        // Get the point position
+        let pointPos = null;
+        for (const layer of project.layers) {
+          const fp = layer.flowPaths.find((f) => f.id === selection.id);
+          if (fp) {
+            const seg = fp.bezierCurve.segments[bezierDragData.pointIndex];
+            if (seg && seg.point) {
+              const absolutePoint = normalizedToAbsolute(
+                { x: seg.point.x, y: seg.point.y },
+                paperFormat,
+                paperOrientation
+              );
+              pointPos = new paper.Point(absolutePoint.x, absolutePoint.y);
+            }
+            break;
+          }
+        }
+
+        if (pointPos) {
+          // Calculate handle as relative vector from point
+          const handleVector = currentPoint.subtract(pointPos);
+          // Normalize handle vector (scale by canvas dimensions)
+          const normalizedHandle = {
+            x: handleVector.x / dims.widthPx,
+            y: handleVector.y / dims.heightPx,
+          };
+          moveBezierHandle(
+            selection.id,
+            bezierDragData.pointIndex,
+            bezierDragData.handleType,
+            normalizedHandle.x,
+            normalizedHandle.y
+          );
+        }
+      }
+      return;
+    }
+
+    // Normal object dragging
     const dx = x - dragStart.x;
     const dy = y - dragStart.y;
-
     setDragOffset({ x: dx, y: dy });
   };
 
   const handleMouseUp = () => {
     if (isDragging && currentTool === 'select') {
-      // Apply the drag offset as a move operation
-      if (dragOffset.x !== 0 || dragOffset.y !== 0) {
-        // Convert pixel offset to normalized coordinates
-        const format = PAPER_FORMATS[paperFormat];
-        const dims = getEffectiveDimensions(format, paperOrientation);
-        const scale = getScaleFactor();
+      // Clean up bezier drag state
+      if (bezierDragType) {
+        setBezierDragType(null);
+        setBezierDragData(null);
+      } else {
+        // Apply the drag offset as a move operation (normal object dragging)
+        if (dragOffset.x !== 0 || dragOffset.y !== 0) {
+          // Convert pixel offset to normalized coordinates
+          const format = PAPER_FORMATS[paperFormat];
+          const dims = getEffectiveDimensions(format, paperOrientation);
+          const scale = getScaleFactor();
 
-        const normalizedDx = (dragOffset.x / scale) / dims.widthPx;
-        const normalizedDy = (dragOffset.y / scale) / dims.heightPx;
+          const normalizedDx = (dragOffset.x / scale) / dims.widthPx;
+          const normalizedDy = (dragOffset.y / scale) / dims.heightPx;
 
-        moveSelected(normalizedDx, normalizedDy);
+          moveSelected(normalizedDx, normalizedDy);
+        }
       }
 
       setIsDragging(false);
@@ -463,8 +786,39 @@ export function CanvasWorking() {
     }
   };
 
+  // Double-click handler to enter/exit bezier editing mode
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (currentTool !== 'select') return;
+    if (!canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const point = screenToVirtual(x, y);
+
+    // If already in bezier editing mode, exit it
+    if (selection.editingBezier) {
+      disableBezierEditing();
+      return;
+    }
+
+    // Check if we double-clicked on a FlowPath
+    const hitResult = hitTestObjects(point, project);
+    if (hitResult && hitResult.type === 'flowPath') {
+      enableBezierEditing(hitResult.id);
+    }
+  };
+
   const handleFlowPathClick = (point: paper.Point, _layerId: string) => {
-    const newPoints = [...pathPoints, point];
+    // Apply grid snapping if enabled
+    let finalPoint = point;
+    if (gridSnapEnabled) {
+      const format = PAPER_FORMATS[paperFormat];
+      const dims = getEffectiveDimensions(format, paperOrientation);
+      finalPoint = snapToGrid(point, gridSize, dims.widthPx, dims.heightPx);
+    }
+
+    const newPoints = [...pathPoints, finalPoint];
     setPathPoints(newPoints);
 
     const path = new paper.Path();
@@ -491,9 +845,17 @@ export function CanvasWorking() {
       return;
     }
 
+    // Apply grid snapping if enabled
+    let finalPoint = point;
+    if (gridSnapEnabled) {
+      const format = PAPER_FORMATS[paperFormat];
+      const dims = getEffectiveDimensions(format, paperOrientation);
+      finalPoint = snapToGrid(point, gridSize, dims.widthPx, dims.heightPx);
+    }
+
     // Convert to normalized coordinates (0-1) before storing
     const normalizedPosition = absoluteToNormalized(
-      { x: point.x, y: point.y },
+      { x: finalPoint.x, y: finalPoint.y },
       paperFormat,
       paperOrientation
     );
@@ -587,13 +949,33 @@ export function CanvasWorking() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
-    if (e.key === 'Escape' && currentTool === 'flowpath') {
-      setPathPoints([]);
-      if (tempPath) {
-        tempPath.remove();
+    // Escape key handling
+    if (e.key === 'Escape') {
+      if (currentTool === 'flowpath') {
+        setPathPoints([]);
+        if (tempPath) {
+          tempPath.remove();
+        }
+        setTempPath(null);
+        console.log('❌ FlowPath cancelled');
+      } else if (selection.editingBezier) {
+        // Exit bezier editing mode
+        disableBezierEditing();
       }
-      setTempPath(null);
-      console.log('❌ FlowPath cancelled');
+    }
+
+    // Enter key to toggle bezier editing on selected FlowPath
+    if (e.key === 'Enter' && currentTool === 'select') {
+      if (selection.editingBezier) {
+        disableBezierEditing();
+      } else if (selection.type === 'flowPath' && selection.id) {
+        enableBezierEditing(selection.id);
+      }
+    }
+
+    // Delete key to delete selected bezier point
+    if (e.key === 'Delete' && selection.editingBezier && selection.selectedPointIndex !== null && selection.id) {
+      deleteBezierPoint(selection.id, selection.selectedPointIndex);
     }
   };
 
@@ -610,14 +992,19 @@ export function CanvasWorking() {
         backgroundColor: '#e0e0e0',
       }}
     >
+      {/* Render GridOverlay React component */}
+      {gridOverlay}
       {/* Render SelectionOverlay React component */}
       {selectionOverlay}
+      {/* Render BezierEditOverlay React component */}
+      {bezierEditOverlay}
       <canvas
         ref={canvasRef}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
         onKeyDown={handleKeyDown}
         tabIndex={0}
         style={{
@@ -631,6 +1018,8 @@ export function CanvasWorking() {
               ? 'copy'
               : isDragging
               ? 'grabbing'
+              : currentTool === 'select' && selection.editingBezier
+              ? 'crosshair'
               : currentTool === 'select'
               ? 'grab'
               : 'default',
@@ -686,6 +1075,40 @@ export function CanvasWorking() {
           }}
         >
           Click to place {selectedGeneratorType || 'bird'} | Seed: {globalSeed}
+        </div>
+      )}
+      {currentTool === 'select' && selection.editingBezier && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '10px',
+            left: '10px',
+            backgroundColor: 'rgba(255, 107, 107, 0.9)',
+            color: 'white',
+            padding: '8px 12px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+          }}
+        >
+          <div style={{ fontWeight: 'bold' }}>✏️ Bezier Edit Mode</div>
+          <div style={{ fontSize: '10px', opacity: 0.9 }}>
+            • Click point to select | Drag to move
+          </div>
+          <div style={{ fontSize: '10px', opacity: 0.9 }}>
+            • Drag handles to adjust curve
+          </div>
+          <div style={{ fontSize: '10px', opacity: 0.9 }}>
+            • Shift+Click handle to mirror to opposite side
+          </div>
+          <div style={{ fontSize: '10px', opacity: 0.9 }}>
+            • Shift+Click or Delete to remove point
+          </div>
+          <div style={{ fontSize: '10px', opacity: 0.9 }}>
+            • ESC or Enter to exit | Double-click to exit
+          </div>
         </div>
       )}
       <div

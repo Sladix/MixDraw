@@ -10,12 +10,14 @@ import { PAPER_FORMATS, getEffectiveDimensions } from '../types/formats';
  * @param layer - Layer to export
  * @param paperFormat - Paper format for coordinate conversion
  * @param paperOrientation - Paper orientation (portrait or landscape)
+ * @param globalSeed - Global seed offset (defaults to 0)
  * @returns SVG string
  */
 export function exportLayerToSVG(
   layer: Layer,
   paperFormat: FormatType = 'A4',
-  paperOrientation: 'portrait' | 'landscape' = 'portrait'
+  paperOrientation: 'portrait' | 'landscape' = 'portrait',
+  globalSeed: number = 0
 ): string {
   const format = PAPER_FORMATS[paperFormat];
   const dims = getEffectiveDimensions(format, paperOrientation);
@@ -77,10 +79,14 @@ export function exportLayerToSVG(
         }
       }
 
-      // Create temporary flowPath with reconstructed curve
+      // Create temporary flowPath with reconstructed curve and global seed offset
       const tempFlowPath = {
         ...flowPath,
         bezierCurve: reconstructedPath,
+        distributionParams: {
+          ...flowPath.distributionParams,
+          seed: flowPath.distributionParams.seed + globalSeed,
+        },
       };
 
       const instances = regenerateFlowPath(tempFlowPath);
@@ -112,7 +118,7 @@ export function exportLayerToSVG(
         new paper.Point(absolutePosition.x, absolutePosition.y),
         gen.rotation,
         gen.scale,
-        gen.seed
+        gen.seed + globalSeed
       );
       instance.shape.paths.forEach((path) => {
         const clonedPath = path.clone();
@@ -184,15 +190,17 @@ function applyBrushFadeEffect(
  * @param projectName - Base name for exported files
  * @param paperFormat - Paper format for coordinate conversion
  * @param paperOrientation - Paper orientation (portrait or landscape)
+ * @param globalSeed - Global seed offset (defaults to 0)
  */
 export function exportAllLayers(
   project: Project,
   projectName: string,
   paperFormat: FormatType = 'A4',
-  paperOrientation: 'portrait' | 'landscape' = 'portrait'
+  paperOrientation: 'portrait' | 'landscape' = 'portrait',
+  globalSeed: number = 0
 ): void {
   project.layers.forEach((layer, index) => {
-    const svg = exportLayerToSVG(layer, paperFormat, paperOrientation);
+    const svg = exportLayerToSVG(layer, paperFormat, paperOrientation, globalSeed);
     downloadSVG(svg, `${projectName}-layer-${index + 1}-${layer.name}.svg`);
   });
 }

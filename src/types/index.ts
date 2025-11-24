@@ -140,7 +140,7 @@ export type PackingMode = 'tight' | 'normal' | 'loose' | 'allow-overlap';
 
 export interface DistributionParams {
   mode: 'linear' | 'noise' | 'random' | 'custom';
-  density: number; // total shapes per mm (divided by generator count internally)
+  density: number | MinMaxValue; // total shapes per mm (divided by generator count internally) - can be static or range
   densityMode?: 'visual' | 'fixed-count'; // visual = adjust for size, fixed-count = exact count
   packingMode?: PackingMode; // Collision detection mode (tight = no overlap, normal = 10%, loose = 25%, allow-overlap = disabled)
   minSpacing?: number; // Minimum spacing between shapes in mm (negative = tighter, positive = more space)
@@ -154,8 +154,8 @@ export interface DistributionParams {
 export type FillMode = 'grid' | 'noise' | 'random' | 'packed';
 
 export interface FlowParams {
-  followCurve: number; // 0-1
-  spread: number; // Width of tube in mm (e.g., 10mm = 5mm each side of path)
+  followCurve: number | MinMaxValue; // 0-1 - rotation alignment (can be static or range)
+  spread: number | MinMaxValue; // Width of tube in mm (e.g., 10mm = 5mm each side of path) - can be static or range
   fillMode: FillMode; // How to fill the tube area
 }
 
@@ -303,6 +303,7 @@ export interface StandaloneGenerator {
   generatorType: string;
   params: Record<string, any>;
   seed: number;
+  timelines?: Timeline[];
 }
 
 // ============================================================================
@@ -333,6 +334,10 @@ export interface Selection {
   ids: string[]; // Multi-select support
   bounds?: paper.Rectangle; // Computed selection bounds
   transformMode?: 'move' | 'rotate' | 'scale' | null; // Active transform
+  // Bezier curve editing state (for flowPath type only)
+  editingBezier?: boolean; // Whether bezier editing mode is active
+  selectedPointIndex?: number | null; // Index of selected curve point (-1 for none)
+  selectedHandleType?: 'in' | 'out' | null; // Which handle is being dragged
 }
 
 // ============================================================================

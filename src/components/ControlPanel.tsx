@@ -26,6 +26,14 @@ export function ControlPanel() {
   const loadProjectToStore = useStore((state) => state.loadProject);
   const addFlowPath = useStore((state) => state.addFlowPath);
 
+  // Grid state
+  const gridVisible = useStore((state) => state.gridVisible);
+  const gridSnapEnabled = useStore((state) => state.gridSnapEnabled);
+  const gridSize = useStore((state) => state.gridSize);
+  const setGridVisible = useStore((state) => state.setGridVisible);
+  const setGridSnapEnabled = useStore((state) => state.setGridSnapEnabled);
+  const setGridSize = useStore((state) => state.setGridSize);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectLoadRef = useRef<HTMLInputElement>(null);
 
@@ -52,7 +60,7 @@ export function ControlPanel() {
   };
 
   const handleExportAll = () => {
-    exportAllLayers(project, 'mixdraw-project', paperFormat, paperOrientation);
+    exportAllLayers(project, 'mixdraw-project', paperFormat, paperOrientation, globalSeed);
     console.log(`Exporting all layers as SVG with format ${paperFormat} ${paperOrientation}...`);
   };
 
@@ -316,6 +324,59 @@ export function ControlPanel() {
           >
             🎲
           </button>
+        </div>
+      </div>
+
+      <div style={{ borderTop: '1px solid #444', margin: '4px 0' }} />
+
+      {/* Grid Controls */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <label style={{ fontSize: '12px', color: '#aaa', fontWeight: 'bold' }}>Grid Settings</label>
+
+        {/* Grid Visibility */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <input
+            type="checkbox"
+            checked={gridVisible}
+            onChange={(e) => setGridVisible(e.target.checked)}
+            style={{ cursor: 'pointer' }}
+          />
+          <label style={{ fontSize: '12px', color: 'white', cursor: 'pointer' }} onClick={() => setGridVisible(!gridVisible)}>
+            Show Grid
+          </label>
+        </div>
+
+        {/* Grid Snap */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <input
+            type="checkbox"
+            checked={gridSnapEnabled}
+            onChange={(e) => setGridSnapEnabled(e.target.checked)}
+            style={{ cursor: 'pointer' }}
+          />
+          <label style={{ fontSize: '12px', color: 'white', cursor: 'pointer' }} onClick={() => setGridSnapEnabled(!gridSnapEnabled)}>
+            Snap to Grid
+          </label>
+        </div>
+
+        {/* Grid Size */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: '11px', color: '#888' }}>Grid Size: {gridSize}mm</label>
+          <input
+            type="range"
+            min="1"
+            max="50"
+            value={gridSize}
+            onChange={(e) => setGridSize(parseInt(e.target.value))}
+            style={{
+              width: '100%',
+              cursor: 'pointer',
+            }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666' }}>
+            <span>1mm</span>
+            <span>50mm</span>
+          </div>
         </div>
       </div>
 

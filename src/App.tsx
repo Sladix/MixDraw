@@ -177,8 +177,10 @@ function AppContent() {
       style={{
         width: '100vw',
         height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
+        display: 'grid',
+        gridTemplateRows: showTimelinePanel
+          ? 'auto auto 1fr 300px'  // header, toolbar, content, timeline
+          : 'auto auto 1fr',        // header, toolbar, content
         overflow: 'hidden',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       }}
@@ -207,7 +209,7 @@ function AppContent() {
       <Toolbar />
 
       {/* Main content area */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', overflow: 'hidden' }}>
         {/* Control Panel (Left) */}
         <ControlPanel />
 
@@ -226,14 +228,16 @@ function AppContent() {
         <GeneratorLibraryPanel />
       </div>
 
+      {/* Timeline Panel - now part of grid */}
+      {showTimelinePanel && (
+        <TimelinePanel isOpen={showTimelinePanel} onClose={closeTimelinePanel} />
+      )}
+
       {/* Keyboard Shortcuts Modal */}
       <KeyboardShortcutsModal
         isOpen={showShortcutsModal}
         onClose={() => setShowShortcutsModal(false)}
       />
-
-      {/* Timeline Panel */}
-      <TimelinePanel isOpen={showTimelinePanel} onClose={closeTimelinePanel} />
     </div>
   );
 }

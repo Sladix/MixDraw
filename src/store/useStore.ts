@@ -7,7 +7,9 @@ import type {
   BackgroundImage,
   Selection,
   ToolType,
+  GeneratorConfig,
 } from '../types';
+import { GeneratorRegistry } from '../core/GeneratorRegistry';
 import type { FormatType } from '../types/formats';
 import {
   type HistoryState,
@@ -38,6 +40,11 @@ interface AppState {
   paperOrientation: 'portrait' | 'landscape';
   globalSeed: number;
 
+  // Grid state
+  gridVisible: boolean;
+  gridSnapEnabled: boolean;
+  gridSize: number; // Grid size in mm
+
   // Actions - Project
   setBackgroundImage: (image: BackgroundImage) => void;
   loadProject: (project: Project) => void;
@@ -52,6 +59,8 @@ interface AppState {
   addFlowPath: (layerId: string, flowPath: Omit<FlowPath, 'id' | 'layerId'>) => void;
   updateFlowPath: (flowPathId: string, updates: Partial<FlowPath>) => void;
   removeFlowPath: (flowPathId: string) => void;
+  addGeneratorToFlowPath: (flowPathId: string, generatorType: string) => void;
+  removeGeneratorFromFlowPath: (flowPathId: string, generatorId: string) => void;
 
   // Actions - Standalone Generators
   addStandaloneGenerator: (
@@ -71,12 +80,27 @@ interface AppState {
   selectMultiple: (ids: string[], type: Selection['type']) => void;
   deselectAll: () => void;
   setSelectedGeneratorType: (type: string | null) => void;
+
+  // Actions - Bezier Editing
+  enableBezierEditing: (flowPathId: string) => void;
+  disableBezierEditing: () => void;
+  selectBezierPoint: (pointIndex: number) => void;
+  deselectBezierPoint: () => void;
+  moveBezierPoint: (flowPathId: string, pointIndex: number, newX: number, newY: number) => void;
+  moveBezierHandle: (flowPathId: string, pointIndex: number, handleType: 'in' | 'out', newX: number, newY: number) => void;
+  deleteBezierPoint: (flowPathId: string, pointIndex: number) => void;
+  insertBezierPoint: (flowPathId: string, insertAfterIndex: number, newX: number, newY: number) => void;
   setZoom: (zoom: number) => void;
   setPan: (pan: { x: number; y: number }) => void;
   setPaperFormat: (format: FormatType) => void;
   setPaperOrientation: (orientation: 'portrait' | 'landscape') => void;
   setGlobalSeed: (seed: number) => void;
   regenerateSeed: () => void;
+
+  // Actions - Grid
+  setGridVisible: (visible: boolean) => void;
+  setGridSnapEnabled: (enabled: boolean) => void;
+  setGridSize: (size: number) => void;
 
   // Actions - History
   undo: () => void;
@@ -135,6 +159,9 @@ export const useStore = create<AppState>((set, get) => ({
   paperFormat: 'A4',
   paperOrientation: 'portrait',
   globalSeed: Math.floor(Math.random() * 10000),
+  gridVisible: true,
+  gridSnapEnabled: false,
+  gridSize: 10, // 10mm default grid
 
   // Project actions
   setBackgroundImage: (image) =>
@@ -270,6 +297,46 @@ export const useStore = create<AppState>((set, get) => ({
       },
     })),
 
+  addGeneratorToFlowPath: (flowPathId, generatorType) =>
+    set((state) => {
+      const newGenerator: GeneratorConfig = {
+        id: `gen-${generateId()}`,
+        type: generatorType,
+        weight: 1,
+        params: GeneratorRegistry.getDefaultParams(generatorType),
+        followNormal: false,
+      };
+
+      return {
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((l) => ({
+            ...l,
+            flowPaths: l.flowPaths.map((fp) =>
+              fp.id === flowPathId
+                ? { ...fp, generators: [...fp.generators, newGenerator] }
+                : fp
+            ),
+          })),
+        },
+      };
+    }),
+
+  removeGeneratorFromFlowPath: (flowPathId, generatorId) =>
+    set((state) => ({
+      project: {
+        ...state.project,
+        layers: state.project.layers.map((l) => ({
+          ...l,
+          flowPaths: l.flowPaths.map((fp) =>
+            fp.id === flowPathId
+              ? { ...fp, generators: fp.generators.filter((g) => g.id !== generatorId) }
+              : fp
+          ),
+        })),
+      },
+    })),
+
   // Standalone Generator actions
   addStandaloneGenerator: (layerId, generator) =>
     set((state) => {
@@ -381,6 +448,11 @@ export const useStore = create<AppState>((set, get) => ({
   setPaperOrientation: (orientation) => set({ paperOrientation: orientation }),
   setGlobalSeed: (seed) => set({ globalSeed: seed }),
   regenerateSeed: () => set({ globalSeed: Math.floor(Math.random() * 10000) }),
+
+  // Grid actions
+  setGridVisible: (visible) => set({ gridVisible: visible }),
+  setGridSnapEnabled: (enabled) => set({ gridSnapEnabled: enabled }),
+  setGridSize: (size) => set({ gridSize: Math.max(1, Math.min(50, size)) }), // Clamp between 1-50mm
 
   // History actions
   pushToHistory: () =>
@@ -759,6 +831,185 @@ export const useStore = create<AppState>((set, get) => ({
                   }
                 : sg
             ),
+          })),
+        },
+      };
+    }),
+
+  // Bezier editing actions
+  enableBezierEditing: (flowPathId) =>
+    set((state) => ({
+      selection: {
+        ...state.selection,
+        type: 'flowPath',
+        id: flowPathId,
+        ids: [flowPathId],
+        editingBezier: true,
+        selectedPointIndex: null,
+        selectedHandleType: null,
+      },
+    })),
+
+  disableBezierEditing: () =>
+    set((state) => ({
+      selection: {
+        ...state.selection,
+        editingBezier: false,
+        selectedPointIndex: null,
+        selectedHandleType: null,
+      },
+    })),
+
+  selectBezierPoint: (pointIndex) =>
+    set((state) => ({
+      selection: {
+        ...state.selection,
+        selectedPointIndex: pointIndex,
+        selectedHandleType: null,
+      },
+    })),
+
+  deselectBezierPoint: () =>
+    set((state) => ({
+      selection: {
+        ...state.selection,
+        selectedPointIndex: null,
+        selectedHandleType: null,
+      },
+    })),
+
+  moveBezierPoint: (flowPathId, pointIndex, newX, newY) =>
+    set((state) => {
+      return {
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((l) => ({
+            ...l,
+            flowPaths: l.flowPaths.map((fp) => {
+              if (fp.id !== flowPathId) return fp;
+
+              const newSegments = (fp.bezierCurve.segments as any[]).map((seg: any, idx: number) => {
+                if (idx !== pointIndex) return seg;
+                return {
+                  ...seg,
+                  point: { x: newX, y: newY },
+                };
+              });
+
+              return {
+                ...fp,
+                bezierCurve: {
+                  ...(fp.bezierCurve as any),
+                  segments: newSegments,
+                } as any,
+              };
+            }),
+          })),
+        },
+      };
+    }),
+
+  moveBezierHandle: (flowPathId, pointIndex, handleType, newX, newY) =>
+    set((state) => {
+      return {
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((l) => ({
+            ...l,
+            flowPaths: l.flowPaths.map((fp) => {
+              if (fp.id !== flowPathId) return fp;
+
+              const newSegments = (fp.bezierCurve.segments as any[]).map((seg: any, idx: number) => {
+                if (idx !== pointIndex) return seg;
+
+                const handleKey = handleType === 'in' ? 'handleIn' : 'handleOut';
+                return {
+                  ...seg,
+                  [handleKey]: { x: newX, y: newY },
+                };
+              });
+
+              return {
+                ...fp,
+                bezierCurve: {
+                  ...(fp.bezierCurve as any),
+                  segments: newSegments,
+                } as any,
+              };
+            }),
+          })),
+        },
+      };
+    }),
+
+  deleteBezierPoint: (flowPathId, pointIndex) =>
+    set((state) => {
+      // Push to history before deleting
+      const newHistory = pushHistory(state.history, cloneProject(state.project));
+
+      return {
+        history: newHistory,
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((l) => ({
+            ...l,
+            flowPaths: l.flowPaths.map((fp) => {
+              if (fp.id !== flowPathId) return fp;
+
+              // Don't allow deleting if only 2 points remain
+              const segments = fp.bezierCurve.segments as any[];
+              if (segments.length <= 2) return fp;
+
+              const newSegments = segments.filter(
+                (_: any, idx: number) => idx !== pointIndex
+              );
+
+              return {
+                ...fp,
+                bezierCurve: {
+                  ...(fp.bezierCurve as any),
+                  segments: newSegments,
+                } as any,
+              };
+            }),
+          })),
+        },
+        selection: {
+          ...state.selection,
+          selectedPointIndex: null,
+        },
+      };
+    }),
+
+  insertBezierPoint: (flowPathId, insertAfterIndex, newX, newY) =>
+    set((state) => {
+      // Push to history before inserting
+      const newHistory = pushHistory(state.history, cloneProject(state.project));
+
+      return {
+        history: newHistory,
+        project: {
+          ...state.project,
+          layers: state.project.layers.map((l) => ({
+            ...l,
+            flowPaths: l.flowPaths.map((fp) => {
+              if (fp.id !== flowPathId) return fp;
+
+              const newSegments = [...(fp.bezierCurve.segments as any[])];
+              newSegments.splice(insertAfterIndex + 1, 0, {
+                point: { x: newX, y: newY },
+                handleIn: null,
+                handleOut: null,
+              });
+
+              return {
+                ...fp,
+                bezierCurve: {
+                  ...(fp.bezierCurve as any),
+                  segments: newSegments,
+                } as any,
+              };
+            }),
           })),
         },
       };

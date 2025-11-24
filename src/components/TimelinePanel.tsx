@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore } from '../store/useStore';
 import { useTimeline } from '../contexts/TimelineContext';
 import type { Timeline, Keyframe, InterpolationType } from '../types';
+import { isMinMaxValue } from '../types';
 import { nanoid } from 'nanoid';
 import { evaluateTimeline } from '../utils/interpolation';
 import { GeneratorRegistry } from '../core/GeneratorRegistry';
@@ -23,15 +24,14 @@ export function TimelinePanel({ isOpen, onClose }: TimelinePanelProps) {
   const project = useStore((state) => state.project);
   const selection = useStore((state) => state.selection);
   const updateFlowPath = useStore((state) => state.updateFlowPath);
-  const { selectedParam } = useTimeline();
-
-  const [scrubberPosition, setScrubberPosition] = useState(0.5); // 0-1
+  const { selectedParam, scrubberPosition, setScrubberPosition } = useTimeline();
   const [hoveredKeyframe, setHoveredKeyframe] = useState<string | null>(null);
   const [selectedKeyframe, setSelectedKeyframe] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [showContextMenu, setShowContextMenu] = useState<{ x: number; y: number; keyframeId: string } | null>(null);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [gridSize, setGridSize] = useState(0.1); // 10% by default
+  const [curveMaxValue, setCurveMaxValue] = useState<number | null>(null); // User-specified max value for curves
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>();
@@ -55,26 +55,31 @@ export function TimelinePanel({ isOpen, onClose }: TimelinePanelProps) {
     ? timelines.find((tl) => tl.paramName === selectedParam)
     : null;
 
+  // Helper to get numeric value from number | MinMaxValue
+  const getDefaultNumber = (value: number | { min: number; max: number }): number => {
+    return isMinMaxValue(value) ? (value.min + value.max) / 2 : value;
+  };
+
   // Available parameters to keyframe with value ranges
   const availableParams = selectedFlowPath ? [
     {
       name: 'density',
       label: 'Density',
-      defaultValue: selectedFlowPath.distributionParams.density,
+      defaultValue: getDefaultNumber(selectedFlowPath.distributionParams.density),
       minValue: 0,
       maxValue: 5,
     },
     {
       name: 'spread',
       label: 'Spread',
-      defaultValue: selectedFlowPath.flowParams.spread,
+      defaultValue: getDefaultNumber(selectedFlowPath.flowParams.spread),
       minValue: 0,
       maxValue: 200,
     },
     {
       name: 'followCurve',
       label: 'Follow Curve',
-      defaultValue: selectedFlowPath.flowParams.followCurve,
+      defaultValue: getDefaultNumber(selectedFlowPath.flowParams.followCurve),
       minValue: 0,
       maxValue: 1,
     },
@@ -199,6 +204,202 @@ export function TimelinePanel({ isOpen, onClose }: TimelinePanelProps) {
       keyframes: updatedKeyframes.sort((a, b) => a.t - b.t),
     });
   }, [activeTimeline, updateTimeline]);
+
+  // Preset curve definitions
+  const presets = [
+    {
+      name: 'Ramp Up',
+      icon: '📈',
+      keyframes: (min: number, max: number): Omit<Keyframe, 'id'>[] => [
+        { t: 0, value: min, interpolation: 'linear' },
+        { t: 1, value: max, interpolation: 'linear' },
+      ],
+    },
+    {
+      name: 'Ramp Down',
+      icon: '📉',
+      keyframes: (min: number, max: number): Omit<Keyframe, 'id'>[] => [
+        { t: 0, value: max, interpolation: 'linear' },
+        { t: 1, value: min, interpolation: 'linear' },
+      ],
+    },
+    {
+      name: 'Bell Curve',
+      icon: '🔔',
+      keyframes: (min: number, max: number): Omit<Keyframe, 'id'>[] => [
+        { t: 0, value: min, interpolation: 'ease' },
+        { t: 0.5, value: max, interpolation: 'ease' },
+        { t: 1, value: min, interpolation: 'ease' },
+      ],
+    },
+    {
+      name: 'Valley',
+      icon: '⛰️',
+      keyframes: (min: number, max: number): Omit<Keyframe, 'id'>[] => [
+        { t: 0, value: max, interpolation: 'ease' },
+        { t: 0.5, value: min, interpolation: 'ease' },
+        { t: 1, value: max, interpolation: 'ease' },
+      ],
+    },
+    {
+      name: 'Wave',
+      icon: '🌊',
+      keyframes: (min: number, max: number): Omit<Keyframe, 'id'>[] => [
+        { t: 0, value: (min + max) / 2, interpolation: 'sin' },
+        { t: 0.25, value: max, interpolation: 'sin' },
+        { t: 0.5, value: (min + max) / 2, interpolation: 'sin' },
+        { t: 0.75, value: min, interpolation: 'sin' },
+        { t: 1, value: (min + max) / 2, interpolation: 'sin' },
+      ],
+    },
+    {
+      name: 'Steps',
+      icon: '🪜',
+      keyframes: (min: number, max: number): Omit<Keyframe, 'id'>[] => [
+        { t: 0, value: min, interpolation: 'linear' },
+        { t: 0.33, value: (min + max) / 2, interpolation: 'linear' },
+        { t: 0.66, value: max, interpolation: 'linear' },
+        { t: 1, value: max, interpolation: 'linear' },
+      ],
+    },
+    {
+      name: 'Ease In',
+      icon: '⤴️',
+      keyframes: (min: number, max: number): Omit<Keyframe, 'id'>[] => [
+        { t: 0, value: min, interpolation: 'ease' },
+        { t: 1, value: max, interpolation: 'ease' },
+      ],
+    },
+    {
+      name: 'Ease Out',
+      icon: '⤵️',
+      keyframes: (min: number, max: number): Omit<Keyframe, 'id'>[] => [
+        { t: 0, value: max, interpolation: 'ease' },
+        { t: 1, value: min, interpolation: 'ease' },
+      ],
+    },
+    {
+      name: 'Pulse',
+      icon: '💓',
+      keyframes: (min: number, max: number): Omit<Keyframe, 'id'>[] => [
+        { t: 0, value: min, interpolation: 'ease' },
+        { t: 0.2, value: max, interpolation: 'ease' },
+        { t: 0.4, value: min, interpolation: 'ease' },
+        { t: 1, value: min, interpolation: 'linear' },
+      ],
+    },
+    {
+      name: 'Bounce',
+      icon: '🏀',
+      keyframes: (min: number, max: number): Omit<Keyframe, 'id'>[] => [
+        { t: 0, value: max, interpolation: 'ease' },
+        { t: 0.3, value: min, interpolation: 'ease' },
+        { t: 0.5, value: (min + max) * 0.7, interpolation: 'ease' },
+        { t: 0.7, value: min, interpolation: 'ease' },
+        { t: 1, value: min, interpolation: 'linear' },
+      ],
+    },
+  ];
+
+  // Apply a preset curve
+  const applyPreset = useCallback((preset: typeof presets[0]) => {
+    if (!selectedParam || !paramDef) return;
+
+    const min = paramDef.minValue;
+    // Use user-specified max value if set, otherwise default to min + 1
+    const max = curveMaxValue !== null
+      ? Math.min(curveMaxValue, paramDef.maxValue)
+      : Math.min(paramDef.minValue + 1, paramDef.maxValue);
+    const keyframesData = preset.keyframes(min, max);
+
+    const newKeyframes: Keyframe[] = keyframesData.map(kf => ({
+      id: nanoid(),
+      ...kf,
+    }));
+
+    if (activeTimeline) {
+      // Replace existing timeline keyframes
+      updateTimeline({
+        ...activeTimeline,
+        keyframes: newKeyframes,
+      });
+    } else {
+      // Create new timeline
+      const newTimeline: Timeline = {
+        id: nanoid(),
+        paramName: selectedParam,
+        keyframes: newKeyframes,
+        enabled: true,
+      };
+      updateTimeline(newTimeline);
+    }
+  }, [selectedParam, paramDef, activeTimeline, updateTimeline, curveMaxValue]);
+
+  // Generate random curve
+  const generateRandomCurve = useCallback(() => {
+    if (!selectedParam || !paramDef) return;
+
+    const min = paramDef.minValue;
+    // Use user-specified max value if set, otherwise default to min + 1
+    const max = curveMaxValue !== null
+      ? Math.min(curveMaxValue, paramDef.maxValue)
+      : Math.min(paramDef.minValue + 1, paramDef.maxValue);
+
+    // Random number of keyframes (2-4)
+    const count = Math.floor(Math.random() * 3) + 2;
+
+    // Random interpolation types
+    const interpolations: InterpolationType[] = ['linear', 'ease', 'sin'];
+
+    const newKeyframes: Keyframe[] = [];
+
+    // Always start at t=0
+    newKeyframes.push({
+      id: nanoid(),
+      t: 0,
+      value: min + Math.random() * (max - min),
+      interpolation: interpolations[Math.floor(Math.random() * interpolations.length)],
+    });
+
+    // Generate middle keyframes
+    for (let i = 1; i < count - 1; i++) {
+      const t = i / (count - 1);
+      newKeyframes.push({
+        id: nanoid(),
+        t: t + (Math.random() - 0.5) * 0.1, // Add slight randomness to position
+        value: min + Math.random() * (max - min),
+        interpolation: interpolations[Math.floor(Math.random() * interpolations.length)],
+      });
+    }
+
+    // Always end at t=1
+    newKeyframes.push({
+      id: nanoid(),
+      t: 1,
+      value: min + Math.random() * (max - min),
+      interpolation: interpolations[Math.floor(Math.random() * interpolations.length)],
+    });
+
+    // Sort by t
+    newKeyframes.sort((a, b) => a.t - b.t);
+
+    if (activeTimeline) {
+      // Replace existing timeline keyframes
+      updateTimeline({
+        ...activeTimeline,
+        keyframes: newKeyframes,
+      });
+    } else {
+      // Create new timeline
+      const newTimeline: Timeline = {
+        id: nanoid(),
+        paramName: selectedParam,
+        keyframes: newKeyframes,
+        enabled: true,
+      };
+      updateTimeline(newTimeline);
+    }
+  }, [selectedParam, paramDef, activeTimeline, updateTimeline, curveMaxValue]);
 
   // Toggle timeline enabled
   const toggleTimelineEnabled = useCallback(() => {
@@ -621,16 +822,12 @@ export function TimelinePanel({ isOpen, onClose }: TimelinePanelProps) {
   return (
     <div
       style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: '300px',
+        height: '100%',
         backgroundColor: '#222',
         borderTop: '1px solid #444',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: 100,
+        overflow: 'hidden',
       }}
     >
       {/* Header */}
@@ -769,18 +966,21 @@ export function TimelinePanel({ isOpen, onClose }: TimelinePanelProps) {
             />
           </div>
 
-          {/* Keyframe properties panel */}
-          {selectedKf && (
-            <div
-              style={{
-                width: '200px',
-                backgroundColor: '#2a2a2a',
-                borderRadius: '4px',
-                padding: '10px',
-                overflowY: 'auto',
-                maxHeight: '100%',
-              }}
-            >
+          {/* Keyframe properties panel - always reserve space */}
+          <div
+            style={{
+              width: '200px',
+              backgroundColor: '#2a2a2a',
+              borderRadius: '4px',
+              padding: '10px',
+              overflowY: 'auto',
+              maxHeight: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            {selectedKf ? (
+              <>
               <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#aaa' }}>
                 Keyframe Properties
               </h4>
@@ -868,8 +1068,125 @@ export function TimelinePanel({ isOpen, onClose }: TimelinePanelProps) {
               >
                 Delete Keyframe (Del)
               </button>
-            </div>
-          )}
+              </>
+            ) : (
+              <div
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <h4 style={{ margin: '0 0 5px 0', fontSize: '12px', color: '#aaa' }}>
+                  Quick Presets
+                </h4>
+
+                {/* Max value input */}
+                <div style={{ marginBottom: '5px' }}>
+                  <label style={{ display: 'block', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '10px', color: '#aaa', display: 'block', marginBottom: '3px' }}>
+                      Max Curve Value (leave empty for default)
+                    </span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={paramDef?.minValue}
+                      max={paramDef?.maxValue}
+                      value={curveMaxValue ?? ''}
+                      onChange={(e) => setCurveMaxValue(e.target.value ? parseFloat(e.target.value) : null)}
+                      placeholder={paramDef ? `${(paramDef.minValue + 1).toFixed(1)} (default)` : ''}
+                      style={{
+                        width: '100%',
+                        padding: '5px',
+                        backgroundColor: '#444',
+                        border: '1px solid #555',
+                        borderRadius: '3px',
+                        color: '#fff',
+                        fontSize: '11px',
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '6px',
+                  }}
+                >
+                  {presets.map((preset) => (
+                    <button
+                      key={preset.name}
+                      onClick={() => applyPreset(preset)}
+                      title={preset.name}
+                      style={{
+                        padding: '8px 4px',
+                        backgroundColor: '#444',
+                        border: '1px solid #555',
+                        borderRadius: '3px',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        fontSize: '10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '4px',
+                        transition: 'background-color 0.15s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#555';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#444';
+                      }}
+                    >
+                      <span style={{ fontSize: '16px' }}>{preset.icon}</span>
+                      <span style={{ fontSize: '9px', lineHeight: '1.2' }}>{preset.name}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={generateRandomCurve}
+                  style={{
+                    padding: '10px',
+                    backgroundColor: '#4a9eff',
+                    border: 'none',
+                    borderRadius: '3px',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    marginTop: '5px',
+                  }}
+                >
+                  <span>🎲</span>
+                  <span>Random Curve</span>
+                </button>
+
+                <div
+                  style={{
+                    marginTop: '10px',
+                    padding: '8px',
+                    backgroundColor: '#333',
+                    borderRadius: '3px',
+                    color: '#888',
+                    fontSize: '9px',
+                    lineHeight: '1.4',
+                    textAlign: 'center',
+                  }}
+                >
+                  💡 Click a preset to apply<br />or generate a random curve
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -179,6 +179,15 @@ export const MinMaxControl: React.FC<MinMaxControlProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      {/* Label */}
+      <label style={{
+        color: '#aaa',
+        whiteSpace: 'nowrap',
+        minWidth: '60px',
+        fontSize: '10px',
+      }}>
+        {label} {unit && `(${unit})`}:
+      </label>
       {/* First row: min/max controls */}
       <div style={{
         display: 'flex',
@@ -187,14 +196,6 @@ export const MinMaxControl: React.FC<MinMaxControlProps> = ({
         fontSize: '10px',
         marginTop: '6px',
       }}>
-      {/* Label */}
-      <label style={{
-        color: '#aaa',
-        whiteSpace: 'nowrap',
-        minWidth: '60px',
-      }}>
-        {label} {unit && `(${unit})`}:
-      </label>
 
       {/* Inputs */}
       {mode === 'range' ? (
@@ -334,7 +335,6 @@ export const MinMaxControl: React.FC<MinMaxControlProps> = ({
             borderRadius: '3px',
             cursor: onCreateTimeline ? 'pointer' : 'default',
             transition: 'background-color 0.15s',
-            marginLeft: '68px', // Align with inputs (label width + gap)
           }}
           onMouseEnter={(e) => {
             if (onCreateTimeline) {

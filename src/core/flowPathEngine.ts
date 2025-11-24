@@ -1,7 +1,8 @@
 import paper from 'paper';
-import type { FlowPath, GeneratedInstance, Shape, AnyModifier, Timeline, FlowParams } from '../types';
+import type { FlowPath, GeneratedInstance, Shape, AnyModifier, Timeline, FlowParams, MinMaxValue } from '../types';
+import { isMinMaxValue } from '../types';
 import { generateTubePositions } from './tubeFilling';
-import { weightedRandomChoice, seededRandom } from '../utils/random';
+import { weightedRandomChoice, seededRandom, lerp } from '../utils/random';
 import { GeneratorRegistry } from './GeneratorRegistry';
 import {
   calculateSizeMultiplier,
@@ -11,6 +12,19 @@ import {
 } from './modifierEngine';
 import { applyTimelineToParam } from '../utils/interpolation';
 import { evaluateAnimatableParams } from '../utils/animatable';
+
+/**
+ * Helper function to evaluate a value that may be a number or MinMaxValue
+ * @param value - The value to evaluate
+ * @param rng - Random number generator
+ * @returns Evaluated number value
+ */
+function evaluateMinMaxValue(value: number | MinMaxValue, rng: () => number): number {
+  if (isMinMaxValue(value)) {
+    return lerp(value.min, value.max, rng());
+  }
+  return value;
+}
 
 /**
  * Regenerate all instances along a FlowPath using 2D tube filling
@@ -55,16 +69,21 @@ export function regenerateFlowPath(flowPath: FlowPath): GeneratedInstance[] {
     }
   }
 
+  // Create RNG for evaluating MinMaxValues
+  const minMaxRng = seededRandom(flowPath.distributionParams.seed + 999);
+
   // Create evaluator functions that combine base values + modifiers + timelines
   const spreadEvaluator = (t: number): number => {
-    const baseSpread = flowPath.flowParams.spread;
-    const withTimeline = applyTimelineToParam(t, 'spread', baseSpread, flowPath.timelines);
+    // Evaluate MinMaxValue if needed, then apply timeline
+    const evaluatedSpread = evaluateMinMaxValue(flowPath.flowParams.spread, minMaxRng);
+    const withTimeline = applyTimelineToParam(t, 'spread', evaluatedSpread, flowPath.timelines);
     return calculateSpreadWidth(t, flowPath.modifiers || [], withTimeline);
   };
 
   const densityEvaluator = (t: number): number => {
-    const baseDensity = flowPath.distributionParams.density;
-    return applyTimelineToParam(t, 'density', baseDensity, flowPath.timelines);
+    // Evaluate MinMaxValue if needed, then apply timeline
+    const evaluatedDensity = evaluateMinMaxValue(flowPath.distributionParams.density, minMaxRng);
+    return applyTimelineToParam(t, 'density', evaluatedDensity, flowPath.timelines);
   };
 
   // Generate 2D positions within tube with accurate bounds
@@ -133,7 +152,8 @@ export function regenerateFlowPath(flowPath: FlowPath): GeneratedInstance[] {
       flowPath.modifiers || [],
       generatorConfig,
       tubePos.t,
-      flowPath.timelines
+      flowPath.timelines,
+      rng
     );
 
     const instance: GeneratedInstance = {
@@ -175,10 +195,14 @@ function applyTubeTransform(
   modifiers: AnyModifier[],
   generatorConfig: any,
   t: number,
-  timelines?: Timeline[]
+  timelines?: Timeline[],
+  rng?: () => number
 ): Shape {
-  // Apply timeline values to flowParams at this t position
-  const followCurve = applyTimelineToParam(t, 'followCurve', flowParams.followCurve, timelines);
+  // Evaluate MinMaxValue if needed, then apply timeline
+  const evaluatedFollowCurve = rng
+    ? evaluateMinMaxValue(flowParams.followCurve, rng)
+    : (typeof flowParams.followCurve === 'number' ? flowParams.followCurve : (flowParams.followCurve.min + flowParams.followCurve.max) / 2);
+  const followCurve = applyTimelineToParam(t, 'followCurve', evaluatedFollowCurve, timelines);
 
   // Calculate rotation based on curve following
   let curveAngle: number;
