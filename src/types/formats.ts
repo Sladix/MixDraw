@@ -25,6 +25,13 @@ export const PAPER_FORMATS: Record<string, PaperFormat> = {
     widthPx: 2480,
     heightPx: 3508,
   },
+  SQUARE_TINY_CANVAS: {
+    name: 'Square Tiny Canvas',
+    width: 97,
+    height: 97,
+    widthPx: 1146,
+    heightPx: 1146,
+  }
 };
 
 export type FormatType = keyof typeof PAPER_FORMATS;

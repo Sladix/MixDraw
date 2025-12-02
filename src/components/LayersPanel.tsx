@@ -52,7 +52,7 @@ export function LayersPanel() {
           .map((layer) => (
             <div
               key={layer.id}
-              onClick={() => setSelection({ type: 'layer', id: layer.id })}
+              onClick={() => setSelection({ type: 'layer', id: layer.id, ids: [layer.id], transformMode: null })}
               style={{
                 padding: '12px',
                 backgroundColor:

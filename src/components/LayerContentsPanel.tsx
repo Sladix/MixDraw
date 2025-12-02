@@ -9,7 +9,10 @@ export function LayerContentsPanel() {
   const removeFlowPath = useStore((state) => state.removeFlowPath);
   const removeStandaloneGenerator = useStore((state) => state.removeStandaloneGenerator);
 
-  const selectedLayer = project.layers.find((l) => l.visible && !l.locked);
+  // Use selected layer if one is selected, otherwise fall back to first visible/unlocked
+  const selectedLayer = selection.type === 'layer' && selection.id
+    ? project.layers.find((l) => l.id === selection.id)
+    : project.layers.find((l) => l.visible && !l.locked);
 
   if (!selectedLayer) {
     return (
@@ -61,7 +64,7 @@ export function LayerContentsPanel() {
             {selectedLayer.flowPaths.map((flowPath, index) => (
               <div
                 key={flowPath.id}
-                onClick={() => setSelection({ type: 'flowPath', id: flowPath.id })}
+                onClick={() => setSelection({ type: 'flowPath', id: flowPath.id, ids: [flowPath.id], transformMode: null })}
                 style={{
                   padding: '10px',
                   backgroundColor:
@@ -124,7 +127,7 @@ export function LayerContentsPanel() {
             {selectedLayer.standaloneGenerators.map((gen, index) => (
               <div
                 key={gen.id}
-                onClick={() => setSelection({ type: 'standaloneGenerator', id: gen.id })}
+                onClick={() => setSelection({ type: 'standaloneGenerator', id: gen.id, ids: [gen.id], transformMode: null })}
                 style={{
                   padding: '10px',
                   backgroundColor:

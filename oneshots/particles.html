@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AxiDraw Particles - Z-Sort & Vpype Ready</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #333;
+            font-family: 'Segoe UI', sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            background-color: #fff;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            /* A4 Ratio visually (72 DPI approx for screen view) */
+            width: 794px; 
+            height: 1123px;
+            display: flex; /* Centering fix */
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            /* Le canvas garde sa résolution interne (config JS) mais s'adapte visuellement au conteneur */
+            width: 100%;
+            height: 100%;
+            /* Optionnel: pour un rendu plus net si downscalé */
+            image-rendering: -webkit-optimize-contrast;
+        }
+
+        #controls-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #888;
+            font-size: 12px;
+            pointer-events: none;
+        }
+    </style>
+    <!-- Chargement des librairies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
+</head>
+<body>
+
+    <div id="canvas-container">
+        <!-- Suppression de 'resize' pour garantir que le canvas garde la taille définie en JS (A4 96dpi) -->
+        <canvas id="myCanvas"></canvas>
+    </div>
+    <div id="controls-hint">Utilisez le panneau à droite pour générer et exporter</div>
+
+    <script>
+        // --- 1. IMPLEMENTATION PERLIN NOISE (Interne) ---
+        const Noise = (function() {
+            var p = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+            var perm = new Array(512);
+            var gradP = new Array(512);
+            var fade = function(t) { return t*t*t*(t*(t*6-15)+10); };
+            var lerp = function(a, b, t) { return (1-t)*a + t*b; };
+            var grad = function(hash, x, y, z) {
+                var h = hash & 15;
+                var u = h < 8 ? x : y;
+                var v = h < 4 ? y : h==12||h==14 ? x : z;
+                return ((h&1) === 0 ? u : -u) + ((h&2) === 0 ? v : -v);
+            };
+            for(var i=0; i<256; i++) {
+                perm[i] = perm[i+256] = p[i];
+                gradP[i] = gradP[i+256] = p[i]; // Simplified for 3D
+            }
+            return {
+                perlin3: function(x, y, z) {
+                    var X = Math.floor(x), Y = Math.floor(y), Z = Math.floor(z);
+                    x -= X; y -= Y; z -= Z;
+                    X &= 255; Y &= 255; Z &= 255;
+                    var u = fade(x), v = fade(y), w = fade(z);
+                    var A = perm[X]+Y, AA = perm[A]+Z, AB = perm[A+1]+Z,
+                        B = perm[X+1]+Y, BA = perm[B]+Z, BB = perm[B+1]+Z;
+                    return lerp(
+                        lerp(lerp(grad(perm[AA], x, y, z), grad(perm[BA], x-1, y, z), u),
+                             lerp(grad(perm[AB], x, y-1, z), grad(perm[BB], x-1, y-1, z), u), v),
+                        lerp(lerp(grad(perm[AA+1], x, y, z-1), grad(perm[BA+1], x-1, y, z-1), u),
+                             lerp(grad(perm[AB+1], x, y-1, z-1), grad(perm[BB+1], x-1, y-1, z-1), u), v), w);
+                }
+            };
+        })();
+
+        // --- 2. CONFIGURATION & STATE ---
+        paper.install(window);
+
+        const config = {
+            // Setup
+            widthA4: 794, // 96 DPI A4 Width
+            heightA4: 1123, // 96 DPI A4 Height
+            padding: 75,  // ~2cm
+            
+            // Particules
+            particleCount: 150,
+            spacingRatio: 0.25, 
+            maxSteps: 400, 
+            
+            // Mouvement (Flow Field)
+            coordMode: 'Trigonometric', 
+            noiseScale: 0.003,
+            trigAmplitude: 2.0, 
+            forceStrength: 1.5,
+            flowVariation: 0.002, 
+            
+            // Axe Z (Profondeur)
+            zNoiseScale: 0.002, 
+            zTimeScale: 0.01,   
+            
+            // Apparence
+            shapeType: 'Ellipse', 
+            minRadius: 2,
+            maxRadius: 10,
+            flattening: 0.4,
+            
+            // Actions
+            generate: function() { runSimulation(); },
+            download: function() { downloadSVG(); }
+        };
+
+        let renderList = []; 
+
+        window.onload = function() {
+            const canvas = document.getElementById('myCanvas');
+            // On impose la taille physique du canvas (résolution d'export)
+            canvas.width = config.widthA4;
+            canvas.height = config.heightA4;
+            
+            paper.setup(canvas);
+            
+            const gui = new dat.GUI();
+            const f1 = gui.addFolder('Simulation');
+            f1.add(config, 'particleCount', 10, 500).name('Nb Particules');
+            f1.add(config, 'maxSteps', 50, 1000).name('Longueur Max');
+            f1.open();
+            
+            const f2 = gui.addFolder('Noise & Mouvement');
+            f2.add(config, 'coordMode', ['Linear', 'Trigonometric']).name('Mode Coordonnées');
+            f2.add(config, 'noiseScale', 0.0001, 0.01).name('Échelle (Freq)');
+            f2.add(config, 'trigAmplitude', 0.5, 5).name('Ampl. Trig');
+            f2.add(config, 'forceStrength', 0.1, 5).name('Vitesse Courant');
+            f2.add(config, 'flowVariation', 0, 0.01).name('Variation Flux');
+            f2.add(config, 'zNoiseScale', 0.0001, 0.01).name('Échelle Z');
+            f2.add(config, 'zTimeScale', 0.001, 0.1).name('Vitesse Z');
+            f2.open();
+
+            const f3 = gui.addFolder('Apparence (Forme)');
+            f3.add(config, 'shapeType', ['Ellipse', 'Rectangle', 'Triangle']).name('Forme');
+            f3.add(config, 'spacingRatio', 0.05, 1.5).name('Densité (Ratio)');
+            f3.add(config, 'minRadius', 0.5, 5).name('Rayon Min');
+            f3.add(config, 'maxRadius', 2, 20).name('Rayon Max');
+            f3.add(config, 'flattening', 0, 0.95).name('Aplatissement');
+            f3.open();
+
+            gui.add(config, 'generate').name('▶ LANCER SIMULATION');
+            gui.add(config, 'download').name('⇩ EXPORTER SVG');
+
+            drawBounds();
+            
+            // Lancer une simu par défaut
+            runSimulation();
+        };
+
+        function drawBounds() {
+            project.activeLayer.removeChildren();
+            
+            // Dessin des limites (dashed line)
+            // Comme le canvas est maintenant à la bonne taille, ces lignes apparaîtront bien à 2cm des bords
+            const bounds = new Path.Rectangle(
+                new Point(config.padding, config.padding),
+                new Point(config.widthA4 - config.padding, config.heightA4 - config.padding)
+            );
+            bounds.strokeColor = '#eee';
+            bounds.strokeWidth = 2;
+            bounds.dashArray = [10, 10];
+        }
+
+        // --- 3. COEUR DE LA LOGIQUE ---
+
+        function runSimulation() {
+            project.activeLayer.removeChildren();
+            drawBounds(); // Redessine les limites pour qu'elles soient en dessous
+            
+            renderList = [];
+            
+            const boundsRect = new Rectangle(
+                config.padding, 
+                config.padding, 
+                config.widthA4 - config.padding * 2, 
+                config.heightA4 - config.padding * 2
+            );
+
+            for (let i = 0; i < config.particleCount; i++) {
+                // Départ aléatoire dans la zone sûre
+                let x = boundsRect.x + Math.random() * boundsRect.width;
+                let y = boundsRect.y + Math.random() * boundsRect.height;
+                let zOffset = Math.random() * 1000; 
+                simulateParticle(x, y, zOffset, boundsRect);
+            }
+
+            // Tri en Z pour l'ordre d'affichage (Vpype fera le vrai occlusion culling)
+            renderList.sort((a, b) => a.z - b.z);
+
+            console.log(`Rendering ${renderList.length} items...`);
+            
+            const group = new Group();
+            
+            renderList.forEach(item => {
+                let shape;
+                
+                let width = item.r * 2; 
+                let height = item.r * 2 * (1 - config.flattening);
+
+                if (config.shapeType === 'Rectangle') {
+                    shape = new Path.Rectangle({
+                        center: [item.x, item.y],
+                        size: [height, width] 
+                    });
+                } else if (config.shapeType === 'Triangle') {
+                    shape = new Path.RegularPolygon({
+                        center: [item.x, item.y],
+                        sides: 3,
+                        radius: item.r
+                    });
+                    shape.scale(1 - config.flattening, 1);
+                } else {
+                    shape = new Path.Ellipse({
+                        center: [item.x, item.y],
+                        size: [height, width]
+                    });
+                }
+                
+                shape.rotate(item.angle);
+                shape.fillColor = 'white';
+                shape.strokeColor = 'black';
+                shape.strokeWidth = 1; 
+                
+                group.addChild(shape);
+            });
+            
+            view.draw();
+        }
+
+        function simulateParticle(startX, startY, zOffset, bounds) {
+            let x = startX;
+            let y = startY;
+            let pos = new Point(x, y);
+            
+            let timeStep = 0;
+            let safetyCount = 0;
+
+            while (safetyCount < config.maxSteps) {
+                safetyCount++;
+                timeStep++;
+
+                // --- 1. COORDINATE MAPPING ---
+                let nx, ny;
+                
+                if (config.coordMode === 'Trigonometric') {
+                    // Utilisation de cos/sin pour "boucler" les coordonnées
+                    // On multiplie par trigAmplitude pour couvrir une zone plus ou moins grande du bruit
+                    nx = Math.cos(x * config.noiseScale) * config.trigAmplitude;
+                    ny = Math.sin(y * config.noiseScale) * config.trigAmplitude;
+                } else {
+                    // Mode Linéaire standard
+                    nx = x * config.noiseScale;
+                    ny = y * config.noiseScale;
+                }
+
+                // --- 2. Calcul Direction (Flow Field) ---
+                let angleRad = Noise.perlin3(
+                    nx, 
+                    ny, 
+                    zOffset * config.flowVariation
+                ) * Math.PI * 4;
+                
+                let angleDeg = angleRad * (180 / Math.PI);
+
+                // --- 3. Calcul Z (Profondeur) ---
+                let nxZ = nx; 
+                let nyZ = ny;
+                if (config.coordMode === 'Linear') {
+                    nxZ = x * config.zNoiseScale;
+                    nyZ = y * config.zNoiseScale;
+                } else {
+                     nxZ = Math.cos(x * config.zNoiseScale) * config.trigAmplitude;
+                     nyZ = Math.sin(y * config.zNoiseScale) * config.trigAmplitude;
+                }
+
+                let zVal = Noise.perlin3(
+                    nxZ, 
+                    nyZ, 
+                    timeStep * config.zTimeScale + zOffset
+                ); 
+
+                // --- 4. Physique ---
+                let radius = mapRange(zVal, -1, 1, config.minRadius, config.maxRadius);
+                
+                let shapeHeight = radius * 2 * (1 - config.flattening);
+                shapeHeight = Math.max(shapeHeight, 0.5);
+
+                let stepDist = shapeHeight * config.spacingRatio;
+
+                let vel = new Point({
+                    length: stepDist,
+                    angle: angleDeg
+                });
+
+                // Check Bounds strict
+                // Si la particule sort de la zone de padding définie (75px des bords), on arrête
+                if (x < bounds.x || x > bounds.x + bounds.width || 
+                    y < bounds.y || y > bounds.y + bounds.height) {
+                    break; 
+                }
+
+                renderList.push({
+                    x: x,
+                    y: y,
+                    z: zVal,
+                    r: radius,
+                    angle: angleDeg
+                });
+
+                pos = pos.add(vel);
+                x = pos.x;
+                y = pos.y;
+            }
+        }
+
+        function mapRange(value, low1, high1, low2, high2) {
+            return low2 + (high2 - low2) * (value - low1) / (high1 - low1);
+        }
+
+        function downloadSVG() {
+            const fileName = `particles_axidraw_${Date.now()}.svg`;
+            const url = "data:image/svg+xml;utf8," + encodeURIComponent(project.exportSVG({asString:true, bounds: 'content'}));
+            
+            const link = document.createElement("a");
+            link.download = fileName;
+            link.href = url;
+            link.click();
+        }
+
+    </script>
+</body>
+</html>
