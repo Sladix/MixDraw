@@ -189,3 +189,6 @@ GeneratorRegistry.register(new NewGenerator());
 
 ## Flow
 User action → Zustand update → Canvas render effect → flowPathEngine → tubeFilling → Generator → Render with layer settings
+
+# One shots
+Self contained experiments are located in ./oneshots

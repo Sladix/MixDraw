@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClipPath Duality - Organic meets Geometric</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #1a1a2e;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            min-height: 100vh;
+            display: flex;
+        }
+
+        #sidebar {
+            width: 320px;
+            background: #fafafa;
+            padding: 20px;
+            overflow-y: auto;
+            height: 100vh;
+            border-right: 3px solid #111;
+        }
+
+        #canvas-area {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+        }
+
+        #canvas-container {
+            background: #fff;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+        }
+
+        svg { display: block; }
+
+        h1 {
+            font-size: 11px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+            color: #111;
+        }
+
+        .subtitle {
+            font-size: 9px;
+            color: #666;
+            margin-bottom: 15px;
+            letter-spacing: 1px;
+        }
+
+        .section {
+            margin-bottom: 18px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .section-title {
+            font-size: 9px;
+            letter-spacing: 2px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+
+        .control-row {
+            margin-bottom: 12px;
+        }
+
+        label {
+            display: block;
+            font-size: 9px;
+            letter-spacing: 1px;
+            color: #555;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .value {
+            float: right;
+            font-weight: bold;
+            color: #111;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            -webkit-appearance: none;
+            background: #ddd;
+            border-radius: 2px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #111;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        select {
+            width: 100%;
+            padding: 8px 10px;
+            font-family: inherit;
+            font-size: 10px;
+            border: 2px solid #111;
+            background: #fff;
+            cursor: pointer;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            font-family: inherit;
+            font-size: 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border: 2px solid #111;
+            background: #fff;
+            cursor: pointer;
+            transition: all 0.15s;
+            margin-bottom: 8px;
+        }
+
+        button:hover { background: #111; color: #fff; }
+        button.primary { background: #111; color: #fff; }
+        button.primary:hover { background: #333; }
+
+        .seed-display {
+            font-size: 10px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+
+        .hint {
+            font-size: 8px;
+            color: #999;
+            margin-top: 3px;
+            line-height: 1.4;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 6px;
+        }
+        .btn-group button {
+            flex: 1;
+            margin: 0;
+        }
+        .btn-group button.active {
+            background: #111;
+            color: #fff;
+        }
+
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .checkbox-row input { width: auto; }
+        .checkbox-row label { margin: 0; }
+
+        kbd {
+            display: inline-block;
+            padding: 2px 6px;
+            font-size: 9px;
+            background: #eee;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div class="section">
+        <h1>ClipPath Duality</h1>
+        <div class="subtitle">Organic meets Geometric</div>
+        <div class="seed-display">Seed: <span id="seed-value">---</span></div>
+        <button class="primary" onclick="regenerate()">Regenerate <kbd>Space</kbd></button>
+        <button onclick="downloadSVG()">Export SVG <kbd>S</kbd></button>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Format</div>
+        <div class="btn-group">
+            <button id="btn-a4" class="active" onclick="setFormat('A4')">A4</button>
+            <button id="btn-a3" onclick="setFormat('A3')">A3</button>
+        </div>
+        <div class="btn-group" style="margin-top: 6px;">
+            <button id="btn-portrait" class="active" onclick="setOrientation('portrait')">Portrait</button>
+            <button id="btn-landscape" onclick="setOrientation('landscape')">Landscape</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Composition</div>
+        <div class="control-row">
+            <label>Organic Blobs <span class="value" id="val-blobs">5</span></label>
+            <input type="range" id="blob-count" min="1" max="12" value="5" step="1">
+            <div class="hint">Large organic shapes filled with geometry</div>
+        </div>
+        <div class="control-row">
+            <label>Geometric Shapes <span class="value" id="val-geo">4</span></label>
+            <input type="range" id="geo-count" min="0" max="10" value="4" step="1">
+            <div class="hint">Circles/polygons filled with flow fields</div>
+        </div>
+        <div class="control-row">
+            <label>Shape Scale <span class="value" id="val-scale">0.25</span></label>
+            <input type="range" id="shape-scale" min="0.1" max="0.5" value="0.25" step="0.01">
+            <div class="hint">Size relative to canvas</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Organic Blobs</div>
+        <div class="control-row">
+            <label>Blob Complexity <span class="value" id="val-complexity">6</span></label>
+            <input type="range" id="blob-complexity" min="3" max="12" value="6" step="1">
+            <div class="hint">Number of lobes/undulations</div>
+        </div>
+        <div class="control-row">
+            <label>Blob Noise <span class="value" id="val-blob-noise">0.4</span></label>
+            <input type="range" id="blob-noise" min="0.1" max="0.8" value="0.4" step="0.05">
+            <div class="hint">Shape irregularity</div>
+        </div>
+        <div class="control-row">
+            <label>Fill Pattern</label>
+            <select id="blob-fill">
+                <option value="auto">Auto (varied)</option>
+                <option value="grid">Grid Lines</option>
+                <option value="concentric">Concentric Rings</option>
+                <option value="spiral">Spiral</option>
+                <option value="radial">Radial Burst</option>
+                <option value="crosshatch">Crosshatch</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Flow Field (in geometric shapes)</div>
+        <div class="control-row">
+            <label>Noise Scale <span class="value" id="val-noise-scale">0.004</span></label>
+            <input type="range" id="noise-scale" min="0.001" max="0.015" value="0.004" step="0.001">
+            <div class="hint">Lower = larger swirls</div>
+        </div>
+        <div class="control-row">
+            <label>Trail Length <span class="value" id="val-trail-len">80</span></label>
+            <input type="range" id="trail-length" min="20" max="200" value="80" step="10">
+        </div>
+        <div class="control-row">
+            <label>Trail Density <span class="value" id="val-trail-density">120</span></label>
+            <input type="range" id="trail-density" min="30" max="300" value="120" step="10">
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">External Forces</div>
+        <div class="control-row">
+            <label>Force Type</label>
+            <select id="force-type">
+                <option value="none">None (pure noise)</option>
+                <option value="center" selected>Center Attraction</option>
+                <option value="spiral">Spiral Vortex</option>
+                <option value="repel">Center Repulsion</option>
+                <option value="gravity">Gravity (downward)</option>
+                <option value="orbit">Orbital</option>
+            </select>
+        </div>
+        <div class="control-row">
+            <label>Force Strength <span class="value" id="val-force">0.3</span></label>
+            <input type="range" id="force-strength" min="0" max="1" value="0.3" step="0.05">
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Line Style</div>
+        <div class="control-row">
+            <label>Stroke Width <span class="value" id="val-stroke">0.5</span>mm</label>
+            <input type="range" id="stroke-width" min="0.2" max="1.5" value="0.5" step="0.1">
+        </div>
+        <div class="control-row">
+            <label>Line Spacing <span class="value" id="val-spacing">4</span>mm</label>
+            <input type="range" id="line-spacing" min="1" max="12" value="4" step="0.5">
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Background Flow</div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="bg-flow-enabled">
+            <label>Enable background flow field</label>
+        </div>
+        <div class="control-row">
+            <label>BG Density <span class="value" id="val-bg-density">40</span></label>
+            <input type="range" id="bg-density" min="10" max="150" value="40" step="5">
+            <div class="hint">Flow trails outside all shapes</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Options</div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="show-outlines" checked>
+            <label>Show shape outlines</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="overlap-mode">
+            <label>Allow overlapping shapes</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="vary-stroke">
+            <label>Vary stroke width along trails</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="organic-hatching">
+            <label>Organic hatching (wavy lines)</label>
+        </div>
+    </div>
+
+    <div class="section">
+        <button onclick="randomizeAll()">Randomize All</button>
+        <button onclick="resetDefaults()">Reset Defaults</button>
+    </div>
+</div>
+
+<div id="canvas-area">
+    <div id="canvas-container"></div>
+</div>
+
+<script>
+// ============================================
+// SIMPLEX NOISE IMPLEMENTATION
+// ============================================
+const SimplexNoise = (function() {
+    const F2 = 0.5 * (Math.sqrt(3) - 1);
+    const G2 = (3 - Math.sqrt(3)) / 6;
+    const grad3 = [
+        [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+        [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+        [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
+    ];
+
+    function SimplexNoise(random) {
+        this.p = new Uint8Array(256);
+        for (let i = 0; i < 256; i++) this.p[i] = i;
+        for (let i = 255; i > 0; i--) {
+            const j = Math.floor(random() * (i + 1));
+            [this.p[i], this.p[j]] = [this.p[j], this.p[i]];
+        }
+        this.perm = new Uint8Array(512);
+        for (let i = 0; i < 512; i++) this.perm[i] = this.p[i & 255];
+    }
+
+    SimplexNoise.prototype.noise2D = function(x, y) {
+        const s = (x + y) * F2;
+        const i = Math.floor(x + s);
+        const j = Math.floor(y + s);
+        const t = (i + j) * G2;
+        const X0 = i - t, Y0 = j - t;
+        const x0 = x - X0, y0 = y - Y0;
+        const i1 = x0 > y0 ? 1 : 0;
+        const j1 = x0 > y0 ? 0 : 1;
+        const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
+        const x2 = x0 - 1 + 2*G2, y2 = y0 - 1 + 2*G2;
+        const ii = i & 255, jj = j & 255;
+        let n0 = 0, n1 = 0, n2 = 0;
+
+        let t0 = 0.5 - x0*x0 - y0*y0;
+        if (t0 >= 0) {
+            const gi0 = this.perm[ii + this.perm[jj]] % 12;
+            t0 *= t0;
+            n0 = t0 * t0 * (grad3[gi0][0]*x0 + grad3[gi0][1]*y0);
+        }
+        let t1 = 0.5 - x1*x1 - y1*y1;
+        if (t1 >= 0) {
+            const gi1 = this.perm[ii + i1 + this.perm[jj + j1]] % 12;
+            t1 *= t1;
+            n1 = t1 * t1 * (grad3[gi1][0]*x1 + grad3[gi1][1]*y1);
+        }
+        let t2 = 0.5 - x2*x2 - y2*y2;
+        if (t2 >= 0) {
+            const gi2 = this.perm[ii + 1 + this.perm[jj + 1]] % 12;
+            t2 *= t2;
+            n2 = t2 * t2 * (grad3[gi2][0]*x2 + grad3[gi2][1]*y2);
+        }
+        return 70 * (n0 + n1 + n2);
+    };
+
+    return SimplexNoise;
+})();
+
+// ============================================
+// CONFIGURATION
+// ============================================
+const FORMATS = {
+    A4: { width: 210, height: 297 },
+    A3: { width: 297, height: 420 }
+};
+
+const MM_TO_PX = 3.7795275591; // 96 DPI
+
+let CONFIG = {
+    format: 'A4',
+    orientation: 'portrait',
+    blobCount: 5,
+    geoCount: 4,
+    shapeScale: 0.25,
+    blobComplexity: 6,
+    blobNoise: 0.4,
+    blobFill: 'auto',
+    noiseScale: 0.004,
+    trailLength: 80,
+    trailDensity: 120,
+    forceType: 'center',
+    forceStrength: 0.3,
+    strokeWidth: 0.5,
+    lineSpacing: 4,
+    bgFlowEnabled: false,
+    bgDensity: 40,
+    showOutlines: true,
+    overlapMode: false,
+    varyStroke: false,
+    organicHatching: false
+};
+
+let currentSeed = Math.floor(Math.random() * 100000);
+let noise = null;
+let rng = null;
+
+// ============================================
+// SEEDED RANDOM
+// ============================================
+function seededRandom(seed) {
+    let s = seed;
+    return function() {
+        s = (s * 1103515245 + 12345) & 0x7fffffff;
+        return s / 0x7fffffff;
+    };
+}
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function dist(x1, y1, x2, y2) { return Math.sqrt((x2-x1)**2 + (y2-y1)**2); }
+
+function getCanvasDimensions() {
+    const fmt = FORMATS[CONFIG.format];
+    let w = fmt.width, h = fmt.height;
+    if (CONFIG.orientation === 'landscape') [w, h] = [h, w];
+    return { width: w, height: h };
+}
+
+// ============================================
+// ORGANIC BLOB GENERATION
+// ============================================
+function generateBlobPath(cx, cy, baseRadius, complexity, noiseAmt, seed) {
+    const points = [];
+    const angleStep = (Math.PI * 2) / (complexity * 8);
+    const localRng = seededRandom(seed);
+    const localNoise = new SimplexNoise(localRng);
+
+    for (let angle = 0; angle < Math.PI * 2; angle += angleStep) {
+        // Multiple octaves of noise for organic feel
+        let r = baseRadius;
+        r += localNoise.noise2D(Math.cos(angle) * 2, Math.sin(angle) * 2) * baseRadius * noiseAmt;
+        r += localNoise.noise2D(Math.cos(angle * 2) * 3, Math.sin(angle * 2) * 3) * baseRadius * noiseAmt * 0.5;
+        r += localNoise.noise2D(Math.cos(angle * complexity), Math.sin(angle * complexity)) * baseRadius * noiseAmt * 0.3;
+
+        r = Math.max(baseRadius * 0.3, r); // Prevent collapse
+
+        const x = cx + Math.cos(angle) * r;
+        const y = cy + Math.sin(angle) * r;
+        points.push({ x, y });
+    }
+
+    return points;
+}
+
+function pointsToSmoothPath(points) {
+    if (points.length < 3) return '';
+
+    let d = `M ${points[0].x} ${points[0].y}`;
+
+    for (let i = 0; i < points.length; i++) {
+        const p0 = points[(i - 1 + points.length) % points.length];
+        const p1 = points[i];
+        const p2 = points[(i + 1) % points.length];
+        const p3 = points[(i + 2) % points.length];
+
+        // Catmull-Rom to Bezier conversion
+        const tension = 0.3;
+        const cp1x = p1.x + (p2.x - p0.x) * tension;
+        const cp1y = p1.y + (p2.y - p0.y) * tension;
+        const cp2x = p2.x - (p3.x - p1.x) * tension;
+        const cp2y = p2.y - (p3.y - p1.y) * tension;
+
+        d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+    }
+
+    return d + ' Z';
+}
+
+// ============================================
+// GEOMETRIC SHAPE GENERATION
+// ============================================
+function generateCirclePath(cx, cy, radius, segments = 64) {
+    const points = [];
+    for (let i = 0; i < segments; i++) {
+        const angle = (i / segments) * Math.PI * 2;
+        points.push({
+            x: cx + Math.cos(angle) * radius,
+            y: cy + Math.sin(angle) * radius
+        });
+    }
+    return pointsToSmoothPath(points);
+}
+
+function generatePolygonPath(cx, cy, radius, sides) {
+    let d = '';
+    for (let i = 0; i <= sides; i++) {
+        const angle = (i / sides) * Math.PI * 2 - Math.PI / 2;
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius;
+        d += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
+    }
+    return d + ' Z';
+}
+
+// ============================================
+// GEOMETRIC FILL PATTERNS (for organic shapes)
+// ============================================
+function generateGridLines(bounds, spacing, angle = 0, organic = false, seed = 0) {
+    const lines = [];
+    const cx = bounds.cx, cy = bounds.cy;
+    const diagonal = Math.sqrt(bounds.width**2 + bounds.height**2);
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+
+    const localNoise = new SimplexNoise(seededRandom(seed));
+
+    for (let d = -diagonal/2; d < diagonal/2; d += spacing) {
+        if (organic) {
+            // Generate wavy line as series of points
+            const points = [];
+            const step = spacing * 0.5;
+            for (let t = -diagonal/2; t <= diagonal/2; t += step) {
+                const baseX = cx + cos * t - sin * d;
+                const baseY = cy + sin * t + cos * d;
+
+                // Add organic waviness using noise
+                const waveAmt = spacing * 0.4;
+                const noiseVal = localNoise.noise2D(t * 0.02 + d * 0.01, d * 0.03);
+                const perpX = -sin * noiseVal * waveAmt;
+                const perpY = cos * noiseVal * waveAmt;
+
+                points.push({ x: baseX + perpX, y: baseY + perpY });
+            }
+            lines.push({ points, isPath: true });
+        } else {
+            const x1 = cx + cos * (-diagonal/2) - sin * d;
+            const y1 = cy + sin * (-diagonal/2) + cos * d;
+            const x2 = cx + cos * (diagonal/2) - sin * d;
+            const y2 = cy + sin * (diagonal/2) + cos * d;
+            lines.push({ x1, y1, x2, y2 });
+        }
+    }
+    return lines;
+}
+
+function generateConcentricRings(cx, cy, maxRadius, spacing) {
+    const paths = [];
+    for (let r = spacing; r < maxRadius; r += spacing) {
+        paths.push(generateCirclePath(cx, cy, r));
+    }
+    return paths;
+}
+
+function generateSpiral(cx, cy, maxRadius, spacing, turns = 5) {
+    const points = [];
+    const totalAngle = turns * Math.PI * 2;
+    const steps = Math.floor(totalAngle / 0.1);
+
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const angle = t * totalAngle;
+        const r = t * maxRadius;
+        if (r < spacing / 2) continue;
+        points.push({
+            x: cx + Math.cos(angle) * r,
+            y: cy + Math.sin(angle) * r
+        });
+    }
+
+    if (points.length < 2) return '';
+    let d = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+        d += ` L ${points[i].x} ${points[i].y}`;
+    }
+    return d;
+}
+
+function generateRadialBurst(cx, cy, maxRadius, count) {
+    const lines = [];
+    for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2;
+        lines.push({
+            x1: cx,
+            y1: cy,
+            x2: cx + Math.cos(angle) * maxRadius,
+            y2: cy + Math.sin(angle) * maxRadius
+        });
+    }
+    return lines;
+}
+
+// ============================================
+// FLOW FIELD WITH EXTERNAL FORCES
+// ============================================
+function getFlowAngle(x, y, shapeCx, shapeCy, shapeRadius) {
+    // Base noise angle
+    let angle = noise.noise2D(x * CONFIG.noiseScale, y * CONFIG.noiseScale) * Math.PI * 2;
+
+    // Apply external force
+    const dx = x - shapeCx;
+    const dy = y - shapeCy;
+    const distToCenter = Math.sqrt(dx*dx + dy*dy);
+    const angleToCenter = Math.atan2(dy, dx);
+
+    const strength = CONFIG.forceStrength;
+
+    switch (CONFIG.forceType) {
+        case 'center':
+            // Attract toward center
+            angle = lerp(angle, angleToCenter + Math.PI, strength);
+            break;
+        case 'repel':
+            // Repel from center
+            angle = lerp(angle, angleToCenter, strength);
+            break;
+        case 'spiral':
+            // Spiral vortex (perpendicular + slight inward)
+            const spiralAngle = angleToCenter + Math.PI/2 + 0.3;
+            angle = lerp(angle, spiralAngle, strength);
+            break;
+        case 'gravity':
+            // Downward pull
+            angle = lerp(angle, Math.PI/2, strength);
+            break;
+        case 'orbit':
+            // Pure orbital (perpendicular to center)
+            const orbitAngle = angleToCenter + Math.PI/2;
+            angle = lerp(angle, orbitAngle, strength * (1 - distToCenter/shapeRadius * 0.5));
+            break;
+    }
+
+    return angle;
+}
+
+function generateFlowTrail(startX, startY, shapeCx, shapeCy, shapeRadius, maxSteps, stepSize) {
+    const points = [{ x: startX, y: startY }];
+    let x = startX, y = startY;
+
+    for (let i = 0; i < maxSteps; i++) {
+        const angle = getFlowAngle(x, y, shapeCx, shapeCy, shapeRadius);
+        x += Math.cos(angle) * stepSize;
+        y += Math.sin(angle) * stepSize;
+
+        // Check if still roughly within shape bounds (with margin)
+        const d = dist(x, y, shapeCx, shapeCy);
+        if (d > shapeRadius * 1.5) break;
+
+        points.push({ x, y });
+    }
+
+    return points;
+}
+
+function generateFlowField(cx, cy, radius, density, trailLength) {
+    const trails = [];
+    const stepSize = 2;
+    const maxSteps = Math.floor(trailLength / stepSize);
+
+    // Scatter starting points within shape
+    for (let i = 0; i < density; i++) {
+        const angle = rng() * Math.PI * 2;
+        const r = Math.sqrt(rng()) * radius * 0.95; // sqrt for uniform distribution
+        const startX = cx + Math.cos(angle) * r;
+        const startY = cy + Math.sin(angle) * r;
+
+        const trail = generateFlowTrail(startX, startY, cx, cy, radius, maxSteps, stepSize);
+        if (trail.length > 3) {
+            trails.push(trail);
+        }
+    }
+
+    return trails;
+}
+
+// ============================================
+// SHAPE PLACEMENT (avoid overlap)
+// ============================================
+function placeShapes(count, canvasW, canvasH, baseRadius, existingShapes = []) {
+    const shapes = [];
+    const padding = baseRadius * 0.5;
+    const margin = baseRadius * 1.2;
+    const maxAttempts = 100;
+
+    for (let i = 0; i < count; i++) {
+        let placed = false;
+
+        for (let attempt = 0; attempt < maxAttempts && !placed; attempt++) {
+            const cx = margin + rng() * (canvasW - margin * 2);
+            const cy = margin + rng() * (canvasH - margin * 2);
+            const radius = baseRadius * (0.7 + rng() * 0.6);
+
+            // Check overlap with existing shapes
+            let overlaps = false;
+            if (!CONFIG.overlapMode) {
+                const allShapes = [...existingShapes, ...shapes];
+                for (const s of allShapes) {
+                    const d = dist(cx, cy, s.cx, s.cy);
+                    if (d < (radius + s.radius) * 0.8) {
+                        overlaps = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!overlaps) {
+                shapes.push({ cx, cy, radius, seed: Math.floor(rng() * 100000) });
+                placed = true;
+            }
+        }
+    }
+
+    return shapes;
+}
+
+// ============================================
+// SVG RENDERING
+// ============================================
+function createSVG() {
+    const dim = getCanvasDimensions();
+    const width = dim.width * MM_TO_PX;
+    const height = dim.height * MM_TO_PX;
+
+    // Reset RNG
+    rng = seededRandom(currentSeed);
+    noise = new SimplexNoise(rng);
+
+    const strokeWidthPx = CONFIG.strokeWidth * MM_TO_PX;
+    const spacingPx = CONFIG.lineSpacing * MM_TO_PX;
+    const baseRadius = Math.min(width, height) * CONFIG.shapeScale;
+
+    // Create SVG
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg"
+        width="${dim.width}mm" height="${dim.height}mm"
+        viewBox="0 0 ${width} ${height}">`;
+
+    // Defs for clip paths
+    svg += '<defs>';
+
+    // Place organic blobs
+    const blobs = placeShapes(CONFIG.blobCount, width, height, baseRadius);
+
+    // Place geometric shapes (avoiding blobs)
+    const geoShapes = placeShapes(CONFIG.geoCount, width, height, baseRadius * 0.8, blobs);
+
+    // Generate clip paths for blobs
+    blobs.forEach((blob, i) => {
+        const points = generateBlobPath(
+            blob.cx, blob.cy, blob.radius,
+            CONFIG.blobComplexity, CONFIG.blobNoise, blob.seed
+        );
+        const pathD = pointsToSmoothPath(points);
+        svg += `<clipPath id="blob-${i}"><path d="${pathD}"/></clipPath>`;
+    });
+
+    // Generate clip paths for geometric shapes
+    geoShapes.forEach((geo, i) => {
+        const sides = 3 + Math.floor(seededRandom(geo.seed)() * 5); // 3-7 sides, or circle
+        const useCircle = seededRandom(geo.seed + 1)() > 0.5;
+        const pathD = useCircle
+            ? generateCirclePath(geo.cx, geo.cy, geo.radius)
+            : generatePolygonPath(geo.cx, geo.cy, geo.radius, sides);
+        svg += `<clipPath id="geo-${i}"><path d="${pathD}"/></clipPath>`;
+        geo.isCircle = useCircle;
+        geo.sides = sides;
+    });
+
+    svg += '</defs>';
+
+    // Background
+    svg += `<rect width="${width}" height="${height}" fill="white"/>`;
+
+    // Render organic blobs with geometric fills
+    const fillTypes = ['grid', 'concentric', 'spiral', 'radial', 'crosshatch'];
+
+    blobs.forEach((blob, i) => {
+        const fillType = CONFIG.blobFill === 'auto'
+            ? fillTypes[Math.floor(seededRandom(blob.seed)() * fillTypes.length)]
+            : CONFIG.blobFill;
+
+        svg += `<g clip-path="url(#blob-${i})">`;
+
+        const bounds = {
+            cx: blob.cx, cy: blob.cy,
+            width: blob.radius * 2.5, height: blob.radius * 2.5
+        };
+
+        
+
+        // Outline
+        if (CONFIG.showOutlines) {
+            const points = generateBlobPath(
+                blob.cx, blob.cy, blob.radius,
+                CONFIG.blobComplexity, CONFIG.blobNoise, blob.seed
+            );
+            const pathD = pointsToSmoothPath(points);
+            svg += `<path d="${pathD}" fill="white" stroke="black" stroke-width="${strokeWidthPx * 1.5}"/>`;
+        }
+
+        switch (fillType) {
+            case 'grid': {
+                const angle = seededRandom(blob.seed)() * Math.PI;
+                const lines = generateGridLines(bounds, spacingPx, angle, CONFIG.organicHatching, blob.seed);
+                lines.forEach(l => {
+                    if (l.isPath) {
+                        // Organic wavy path
+                        let d = `M ${l.points[0].x} ${l.points[0].y}`;
+                        for (let j = 1; j < l.points.length; j++) {
+                            d += ` L ${l.points[j].x} ${l.points[j].y}`;
+                        }
+                        svg += `<path d="${d}" fill="none" stroke="black" stroke-width="${strokeWidthPx}" stroke-linecap="round"/>`;
+                    } else {
+                        svg += `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}"
+                            stroke="black" stroke-width="${strokeWidthPx}" stroke-linecap="round"/>`;
+                    }
+                });
+                break;
+            }
+            case 'concentric': {
+                const rings = generateConcentricRings(blob.cx, blob.cy, blob.radius * 1.5, spacingPx);
+                rings.forEach(d => {
+                    svg += `<path d="${d}" fill="none" stroke="black" stroke-width="${strokeWidthPx}"/>`;
+                });
+                break;
+            }
+            case 'spiral': {
+                const turns = 3 + Math.floor(seededRandom(blob.seed)() * 5);
+                const spiralD = generateSpiral(blob.cx, blob.cy, blob.radius * 1.3, spacingPx, turns);
+                if (spiralD) {
+                    svg += `<path d="${spiralD}" fill="none" stroke="black" stroke-width="${strokeWidthPx}" stroke-linecap="round"/>`;
+                }
+                break;
+            }
+            case 'radial': {
+                const count = 12 + Math.floor(seededRandom(blob.seed)() * 24);
+                const lines = generateRadialBurst(blob.cx, blob.cy, blob.radius * 1.5, count);
+                lines.forEach(l => {
+                    svg += `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}"
+                        stroke="black" stroke-width="${strokeWidthPx}" stroke-linecap="round"/>`;
+                });
+                break;
+            }
+            case 'crosshatch': {
+                const angle1 = seededRandom(blob.seed)() * Math.PI;
+                const angle2 = angle1 + Math.PI / 4;
+                [angle1, angle2].forEach((angle, idx) => {
+                    const lines = generateGridLines(bounds, spacingPx * 1.2, angle, CONFIG.organicHatching, blob.seed + idx * 100);
+                    lines.forEach(l => {
+                        if (l.isPath) {
+                            let d = `M ${l.points[0].x} ${l.points[0].y}`;
+                            for (let j = 1; j < l.points.length; j++) {
+                                d += ` L ${l.points[j].x} ${l.points[j].y}`;
+                            }
+                            svg += `<path d="${d}" fill="none" stroke="black" stroke-width="${strokeWidthPx}" stroke-linecap="round"/>`;
+                        } else {
+                            svg += `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}"
+                                stroke="black" stroke-width="${strokeWidthPx}" stroke-linecap="round"/>`;
+                        }
+                    });
+                });
+                break;
+            }
+        }
+
+        svg += '</g>';
+    });
+
+    // Render geometric shapes with flow field fills
+    geoShapes.forEach((geo, i) => {
+        // Outline
+        if (CONFIG.showOutlines) {
+            const pathD = geo.isCircle
+                ? generateCirclePath(geo.cx, geo.cy, geo.radius)
+                : generatePolygonPath(geo.cx, geo.cy, geo.radius, geo.sides);
+            svg += `<path d="${pathD}" fill="white" stroke="black" stroke-width="${strokeWidthPx * 1.5}"/>`;
+        }
+
+        svg += `<g clip-path="url(#geo-${i})">`;
+
+        // Generate flow trails
+        const trails = generateFlowField(
+            geo.cx, geo.cy, geo.radius,
+            CONFIG.trailDensity, CONFIG.trailLength
+        );
+
+        trails.forEach(trail => {
+            if (trail.length < 2) return;
+
+            if (CONFIG.varyStroke && trail.length > 4) {
+                // Variable stroke: render as multiple segments with different widths
+                const segments = 5;
+                const segLen = Math.floor(trail.length / segments);
+
+                for (let seg = 0; seg < segments; seg++) {
+                    const start = seg * segLen;
+                    const end = seg === segments - 1 ? trail.length : (seg + 1) * segLen + 1;
+
+                    if (end - start < 2) continue;
+
+                    let d = `M ${trail[start].x} ${trail[start].y}`;
+                    for (let j = start + 1; j < end; j++) {
+                        d += ` L ${trail[j].x} ${trail[j].y}`;
+                    }
+
+                    // Taper: thicker at start, thinner at end
+                    const t = seg / (segments - 1);
+                    const width = strokeWidthPx * (1.5 - t * 1.0);
+
+                    svg += `<path d="${d}" fill="none" stroke="black" stroke-width="${width}" stroke-linecap="round"/>`;
+                }
+            } else {
+                let d = `M ${trail[0].x} ${trail[0].y}`;
+                for (let j = 1; j < trail.length; j++) {
+                    d += ` L ${trail[j].x} ${trail[j].y}`;
+                }
+                svg += `<path d="${d}" fill="none" stroke="black" stroke-width="${strokeWidthPx}" stroke-linecap="round"/>`;
+            }
+        });
+
+        svg += '</g>';
+    });
+
+    // Background flow field (outside shapes)
+    if (CONFIG.bgFlowEnabled) {
+        // Create combined clip path that excludes all shapes
+        svg += '<defs>';
+        svg += '<clipPath id="bg-clip">';
+        svg += `<path d="M 0 0 L ${width} 0 L ${width} ${height} L 0 ${height} Z `;
+
+        // Subtract all blob shapes (using fill-rule evenodd)
+        blobs.forEach((blob) => {
+            const points = generateBlobPath(
+                blob.cx, blob.cy, blob.radius,
+                CONFIG.blobComplexity, CONFIG.blobNoise, blob.seed
+            );
+            svg += pointsToSmoothPath(points).replace(' Z', '') + ' ';
+        });
+
+        // Subtract geometric shapes
+        geoShapes.forEach((geo) => {
+            const pathD = geo.isCircle
+                ? generateCirclePath(geo.cx, geo.cy, geo.radius)
+                : generatePolygonPath(geo.cx, geo.cy, geo.radius, geo.sides);
+            svg += pathD.replace(' Z', '') + ' ';
+        });
+
+        svg += '" fill-rule="evenodd"/>';
+        svg += '</clipPath></defs>';
+
+        // Render background flow
+        svg += '<g clip-path="url(#bg-clip)">';
+
+        // Generate scattered flow trails across canvas
+        for (let i = 0; i < CONFIG.bgDensity; i++) {
+            const startX = rng() * width;
+            const startY = rng() * height;
+
+            // Use a global center for force calculations
+            const globalCx = width / 2;
+            const globalCy = height / 2;
+            const globalRadius = Math.max(width, height);
+
+            const trail = generateFlowTrail(startX, startY, globalCx, globalCy, globalRadius, CONFIG.trailLength / 2, 2);
+
+            if (trail.length > 3) {
+                let d = `M ${trail[0].x} ${trail[0].y}`;
+                for (let j = 1; j < trail.length; j++) {
+                    d += ` L ${trail[j].x} ${trail[j].y}`;
+                }
+                svg += `<path d="${d}" fill="none" stroke="black" stroke-width="${strokeWidthPx * 0.7}" stroke-linecap="round" opacity="0.5"/>`;
+            }
+        }
+
+        svg += '</g>';
+    }
+
+    // Frame/margin indicators
+    const marginPx = 15 * MM_TO_PX;
+    svg += `<rect x="${marginPx}" y="${marginPx}"
+        width="${width - marginPx*2}" height="${height - marginPx*2}"
+        fill="none" stroke="black" stroke-width="1" stroke-dasharray="5,5" opacity="0.3"/>`;
+
+    svg += '</svg>';
+    return svg;
+}
+
+function render() {
+    document.getElementById('seed-value').textContent = currentSeed;
+    document.getElementById('canvas-container').innerHTML = createSVG();
+
+    // Scale SVG to fit
+    const dim = getCanvasDimensions();
+    const container = document.getElementById('canvas-area');
+    const maxW = container.clientWidth - 60;
+    const maxH = container.clientHeight - 60;
+    const scale = Math.min(maxW / (dim.width * MM_TO_PX), maxH / (dim.height * MM_TO_PX), 1.2);
+
+    const svgEl = document.querySelector('#canvas-container svg');
+    svgEl.style.width = (dim.width * MM_TO_PX * scale) + 'px';
+    svgEl.style.height = (dim.height * MM_TO_PX * scale) + 'px';
+}
+
+// ============================================
+// UI CONTROLS
+// ============================================
+function updateDisplay() {
+    document.getElementById('val-blobs').textContent = CONFIG.blobCount;
+    document.getElementById('val-geo').textContent = CONFIG.geoCount;
+    document.getElementById('val-scale').textContent = CONFIG.shapeScale.toFixed(2);
+    document.getElementById('val-complexity').textContent = CONFIG.blobComplexity;
+    document.getElementById('val-blob-noise').textContent = CONFIG.blobNoise.toFixed(2);
+    document.getElementById('val-noise-scale').textContent = CONFIG.noiseScale.toFixed(3);
+    document.getElementById('val-trail-len').textContent = CONFIG.trailLength;
+    document.getElementById('val-trail-density').textContent = CONFIG.trailDensity;
+    document.getElementById('val-force').textContent = CONFIG.forceStrength.toFixed(2);
+    document.getElementById('val-stroke').textContent = CONFIG.strokeWidth.toFixed(1);
+    document.getElementById('val-spacing').textContent = CONFIG.lineSpacing;
+    document.getElementById('val-bg-density').textContent = CONFIG.bgDensity;
+}
+
+function readControls() {
+    CONFIG.blobCount = parseInt(document.getElementById('blob-count').value);
+    CONFIG.geoCount = parseInt(document.getElementById('geo-count').value);
+    CONFIG.shapeScale = parseFloat(document.getElementById('shape-scale').value);
+    CONFIG.blobComplexity = parseInt(document.getElementById('blob-complexity').value);
+    CONFIG.blobNoise = parseFloat(document.getElementById('blob-noise').value);
+    CONFIG.blobFill = document.getElementById('blob-fill').value;
+    CONFIG.noiseScale = parseFloat(document.getElementById('noise-scale').value);
+    CONFIG.trailLength = parseInt(document.getElementById('trail-length').value);
+    CONFIG.trailDensity = parseInt(document.getElementById('trail-density').value);
+    CONFIG.forceType = document.getElementById('force-type').value;
+    CONFIG.forceStrength = parseFloat(document.getElementById('force-strength').value);
+    CONFIG.strokeWidth = parseFloat(document.getElementById('stroke-width').value);
+    CONFIG.lineSpacing = parseFloat(document.getElementById('line-spacing').value);
+    CONFIG.bgFlowEnabled = document.getElementById('bg-flow-enabled').checked;
+    CONFIG.bgDensity = parseInt(document.getElementById('bg-density').value);
+    CONFIG.showOutlines = document.getElementById('show-outlines').checked;
+    CONFIG.overlapMode = document.getElementById('overlap-mode').checked;
+    CONFIG.varyStroke = document.getElementById('vary-stroke').checked;
+    CONFIG.organicHatching = document.getElementById('organic-hatching').checked;
+
+    updateDisplay();
+    render();
+}
+
+function setFormat(fmt) {
+    CONFIG.format = fmt;
+    document.getElementById('btn-a4').classList.toggle('active', fmt === 'A4');
+    document.getElementById('btn-a3').classList.toggle('active', fmt === 'A3');
+    render();
+}
+
+function setOrientation(orient) {
+    CONFIG.orientation = orient;
+    document.getElementById('btn-portrait').classList.toggle('active', orient === 'portrait');
+    document.getElementById('btn-landscape').classList.toggle('active', orient === 'landscape');
+    render();
+}
+
+function regenerate() {
+    currentSeed = Math.floor(Math.random() * 100000);
+    render();
+}
+
+function downloadSVG() {
+    const svg = createSVG();
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `clippath_duality_${currentSeed}.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function randomizeAll() {
+    document.getElementById('blob-count').value = 2 + Math.floor(Math.random() * 8);
+    document.getElementById('geo-count').value = Math.floor(Math.random() * 8);
+    document.getElementById('shape-scale').value = 0.15 + Math.random() * 0.25;
+    document.getElementById('blob-complexity').value = 3 + Math.floor(Math.random() * 8);
+    document.getElementById('blob-noise').value = 0.2 + Math.random() * 0.5;
+    document.getElementById('blob-fill').value = 'auto';
+    document.getElementById('noise-scale').value = 0.002 + Math.random() * 0.01;
+    document.getElementById('trail-length').value = 40 + Math.floor(Math.random() * 150);
+    document.getElementById('trail-density').value = 50 + Math.floor(Math.random() * 200);
+    document.getElementById('force-type').value = ['none', 'center', 'spiral', 'repel', 'gravity', 'orbit'][Math.floor(Math.random() * 6)];
+    document.getElementById('force-strength').value = Math.random() * 0.8;
+    document.getElementById('stroke-width').value = 0.3 + Math.random() * 0.8;
+    document.getElementById('line-spacing').value = 2 + Math.random() * 8;
+    document.getElementById('bg-flow-enabled').checked = Math.random() > 0.6;
+    document.getElementById('bg-density').value = 20 + Math.floor(Math.random() * 100);
+    document.getElementById('vary-stroke').checked = Math.random() > 0.5;
+    document.getElementById('organic-hatching').checked = Math.random() > 0.5;
+
+    currentSeed = Math.floor(Math.random() * 100000);
+    readControls();
+}
+
+function resetDefaults() {
+    document.getElementById('blob-count').value = 5;
+    document.getElementById('geo-count').value = 4;
+    document.getElementById('shape-scale').value = 0.25;
+    document.getElementById('blob-complexity').value = 6;
+    document.getElementById('blob-noise').value = 0.4;
+    document.getElementById('blob-fill').value = 'auto';
+    document.getElementById('noise-scale').value = 0.004;
+    document.getElementById('trail-length').value = 80;
+    document.getElementById('trail-density').value = 120;
+    document.getElementById('force-type').value = 'center';
+    document.getElementById('force-strength').value = 0.3;
+    document.getElementById('stroke-width').value = 0.5;
+    document.getElementById('line-spacing').value = 4;
+    document.getElementById('bg-flow-enabled').checked = false;
+    document.getElementById('bg-density').value = 40;
+    document.getElementById('show-outlines').checked = true;
+    document.getElementById('overlap-mode').checked = false;
+    document.getElementById('vary-stroke').checked = false;
+    document.getElementById('organic-hatching').checked = false;
+
+    readControls();
+}
+
+// ============================================
+// INITIALIZATION
+// ============================================
+document.addEventListener('DOMContentLoaded', () => {
+    // Bind all controls
+    document.querySelectorAll('input[type="range"], select').forEach(el => {
+        el.addEventListener('input', readControls);
+    });
+    document.querySelectorAll('input[type="checkbox"]').forEach(el => {
+        el.addEventListener('change', readControls);
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && e.target.tagName !== 'INPUT') {
+            e.preventDefault();
+            regenerate();
+        }
+        if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            downloadSVG();
+        }
+    });
+
+    // Initial render
+    updateDisplay();
+    render();
+
+    // Handle resize
+    window.addEventListener('resize', render);
+});
+</script>
+
+</body>
+</html>
