@@ -1,4 +1,5 @@
-import paper from 'paper';
+// @ts-ignore - paper namespace is used for types (paper.Path, paper.Rectangle, etc.)
+import type * as paper from 'paper';
 
 // ============================================================================
 // Utility Types

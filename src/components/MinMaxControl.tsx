@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import type { MinMaxValue, AnimatableMinMaxValue, Timeline } from '../types';
-import { isMinMaxValue, isAnimatableMinMaxValue } from '../types';
+import type { MinMaxValue, Timeline } from '../types';
+import { isMinMaxValue } from '../types';
 import { useDragNumber } from '../hooks/useDragNumber';
 import { evaluateTimeline } from '../utils/interpolation';
 
@@ -16,6 +16,106 @@ interface MinMaxControlProps {
   hasTimeline?: boolean; // Whether this parameter has an active timeline
   timeline?: Timeline; // The timeline object for preview
 }
+
+// Reusable input component that handles drag-to-edit and click-to-type
+interface DeferredNumberInputProps {
+  value: number;
+  onChange: (value: number) => void;
+  min: number;
+  max: number;
+  step: number;
+  label?: string;
+}
+
+const DeferredNumberInput: React.FC<DeferredNumberInputProps> = ({
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  label,
+}) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [editValue, setEditValue] = useState('');
+
+  const drag = useDragNumber({
+    value,
+    onChange,
+    min,
+    max,
+    step,
+    deferred: true, // Enable deferred mode for performance
+  });
+
+  // Focus input when entering edit mode
+  useEffect(() => {
+    if (drag.isEditing && inputRef.current) {
+      setEditValue(drag.displayValue);
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [drag.isEditing, drag.displayValue]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      const parsed = parseFloat(editValue);
+      if (!isNaN(parsed)) {
+        drag.commitEdit(parsed);
+      } else {
+        drag.setIsEditing(false);
+      }
+    } else if (e.key === 'Escape') {
+      drag.setIsEditing(false);
+    }
+  };
+
+  const handleBlur = () => {
+    if (drag.isEditing) {
+      const parsed = parseFloat(editValue);
+      if (!isNaN(parsed)) {
+        drag.commitEdit(parsed);
+      } else {
+        drag.setIsEditing(false);
+      }
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      {label && <span style={{ color: '#888', fontSize: '9px' }}>{label}:</span>}
+      <input
+        ref={inputRef}
+        type={drag.isEditing ? 'text' : 'number'}
+        value={drag.isEditing ? editValue : drag.displayValue}
+        onChange={(e) => {
+          if (drag.isEditing) {
+            setEditValue(e.target.value);
+          }
+        }}
+        onMouseDown={drag.onMouseDown}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        step={step}
+        min={min}
+        max={max}
+        readOnly={!drag.isEditing}
+        title="Drag up/down to adjust • Click to type • Shift for fine control"
+        style={{
+          width: '60px',
+          padding: '4px 6px',
+          backgroundColor: drag.isDragging ? '#3a3a3a' : drag.isEditing ? '#2d3748' : '#2a2a2a',
+          border: `1px solid ${drag.isDragging ? '#4a9eff' : drag.isEditing ? '#68d391' : '#444'}`,
+          borderRadius: '3px',
+          color: '#fff',
+          fontSize: '10px',
+          cursor: drag.isEditing ? 'text' : 'ns-resize',
+          transition: 'background-color 0.1s, border-color 0.1s',
+          outline: 'none',
+        }}
+      />
+    </div>
+  );
+};
 
 export const MinMaxControl: React.FC<MinMaxControlProps> = ({
   label,
@@ -74,31 +174,6 @@ export const MinMaxControl: React.FC<MinMaxControlProps> = ({
       setMode('range');
     }
   };
-
-  // Drag-to-edit hooks for each value
-  const minDrag = useDragNumber({
-    value: minValue,
-    onChange: handleMinChange,
-    min,
-    max: maxValue,
-    step,
-  });
-
-  const maxDrag = useDragNumber({
-    value: maxValue,
-    onChange: handleMaxChange,
-    min: minValue,
-    max,
-    step,
-  });
-
-  const singleDrag = useDragNumber({
-    value: minValue,
-    onChange: handleSingleChange,
-    min,
-    max,
-    step,
-  });
 
   // Draw timeline preview
   useEffect(() => {
@@ -200,87 +275,32 @@ export const MinMaxControl: React.FC<MinMaxControlProps> = ({
       {/* Inputs */}
       {mode === 'range' ? (
         <>
-          {/* Min Input */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ color: '#888', fontSize: '9px' }}>Min:</span>
-            <input
-              type="number"
-              value={minDrag.displayValue}
-              onChange={(e) => handleMinChange(parseFloat(e.target.value))}
-              onMouseDown={minDrag.onMouseDown}
-              step={step}
-              min={min}
-              max={maxValue}
-              title="Click and drag up/down to adjust (Shift for fine control)"
-              style={{
-                width: '60px',
-                padding: '4px 6px',
-                backgroundColor: minDrag.isDragging ? '#3a3a3a' : '#2a2a2a',
-                border: `1px solid ${minDrag.isDragging ? '#4a9eff' : '#444'}`,
-                borderRadius: '3px',
-                color: '#fff',
-                fontSize: '10px',
-                cursor: minDrag.cursorStyle,
-                transition: 'background-color 0.1s, border-color 0.1s',
-              }}
-            />
-          </div>
-
-          {/* Max Input */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ color: '#888', fontSize: '9px' }}>Max:</span>
-            <input
-              type="number"
-              value={maxDrag.displayValue}
-              onChange={(e) => handleMaxChange(parseFloat(e.target.value))}
-              onMouseDown={maxDrag.onMouseDown}
-              step={step}
-              min={minValue}
-              max={max}
-              title="Click and drag up/down to adjust (Shift for fine control)"
-              style={{
-                width: '60px',
-                padding: '4px 6px',
-                backgroundColor: maxDrag.isDragging ? '#3a3a3a' : '#2a2a2a',
-                border: `1px solid ${maxDrag.isDragging ? '#4a9eff' : '#444'}`,
-                borderRadius: '3px',
-                color: '#fff',
-                fontSize: '10px',
-                cursor: maxDrag.cursorStyle,
-                transition: 'background-color 0.1s, border-color 0.1s',
-              }}
-            />
-          </div>
+          <DeferredNumberInput
+            value={minValue}
+            onChange={handleMinChange}
+            min={min}
+            max={maxValue}
+            step={step}
+            label="Min"
+          />
+          <DeferredNumberInput
+            value={maxValue}
+            onChange={handleMaxChange}
+            min={minValue}
+            max={max}
+            step={step}
+            label="Max"
+          />
         </>
       ) : (
-        <>
-          {/* Single Value Input */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
-            <span style={{ color: '#888', fontSize: '9px' }}>Value:</span>
-            <input
-              type="number"
-              value={singleDrag.displayValue}
-              onChange={(e) => handleSingleChange(parseFloat(e.target.value))}
-              onMouseDown={singleDrag.onMouseDown}
-              step={step}
-              min={min}
-              max={max}
-              title="Click and drag up/down to adjust (Shift for fine control)"
-              style={{
-                flex: 1,
-                maxWidth: '130px',
-                padding: '4px 6px',
-                backgroundColor: singleDrag.isDragging ? '#3a3a3a' : '#2a2a2a',
-                border: `1px solid ${singleDrag.isDragging ? '#4a9eff' : '#444'}`,
-                borderRadius: '3px',
-                color: '#fff',
-                fontSize: '10px',
-                cursor: singleDrag.cursorStyle,
-                transition: 'background-color 0.1s, border-color 0.1s',
-              }}
-            />
-          </div>
-        </>
+        <DeferredNumberInput
+          value={minValue}
+          onChange={handleSingleChange}
+          min={min}
+          max={max}
+          step={step}
+          label="Value"
+        />
       )}
 
       {/* Toggle Button */}

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural Cathedral Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #1a1a1a;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        #canvas-container {
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            background: white;
+        }
+        canvas {
+            background: white;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+<div id="canvas-container">
+    <canvas id="canvas"></canvas>
+</div>
+
+<script type="module">
+import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.3/dist/tweakpane.min.js';
+import { generate, exportSVG, getFormat, STYLES } from './src/main.js';
+
+// Setup Paper.js
+paper.setup('canvas');
+
+// Parameters
+const params = {
+    // Canvas
+    format: 'a4',
+    margin: 40,
+    seed: Math.floor(Math.random() * 10000),
+
+    // Style
+    style: 'gothic',
+    character: 0.5,
+
+    // Rendering
+    strokeWidth: 1.5,
+    showWindows: true,
+    showOrnaments: true,
+    showDoors: true,
+    useFills: true,
+
+    // Hatching
+    hatching: false,
+    hatchDensity: 4,
+    hatchSide: 'left',
+    hatchAngle: 45,
+    hatchStyle: 'diagonal',
+
+    // Expert: Silhouette
+    towerProbability: 0.8,
+    towerCount: 2,
+    wingProbability: 0.6,
+    setbackLevels: 0,
+
+    // Expert: Proportions
+    aspectRatio: 0.6,
+    baseHeightRatio: 0.1,
+
+    // Expert: Details
+    windowDensity: 1.0,
+    ornamentLevel: 1.0,
+    chamferAmount: 0,
+    decay: 0,
+
+    // Debug
+    showBlocks: false,
+    expertMode: false,
+};
+
+// Resize canvas
+function resizeCanvas() {
+    const canvas = document.getElementById('canvas');
+    const dim = getFormat(params.format);
+    canvas.width = dim.w;
+    canvas.height = dim.h;
+    paper.view.viewSize = new paper.Size(dim.w, dim.h);
+}
+
+// Main render function
+function render() {
+    resizeCanvas();
+    paper.project.activeLayer.removeChildren();
+
+    // White background
+    new paper.Path.Rectangle({
+        rectangle: paper.view.bounds,
+        fillColor: 'white',
+    }).sendToBack();
+
+    // Generate building
+    const result = generate(params);
+
+    // Debug: show block bounds
+    if (params.showBlocks) {
+        for (const block of result.blocks) {
+            new paper.Path.Rectangle({
+                rectangle: new paper.Rectangle(
+                    block.bounds.x, block.bounds.y,
+                    block.bounds.w, block.bounds.h
+                ),
+                strokeColor: 'red',
+                strokeWidth: 0.5,
+                dashArray: [2, 2],
+            });
+        }
+    }
+
+    paper.view.draw();
+}
+
+function randomizeSeed() {
+    params.seed = Math.floor(Math.random() * 10000);
+    pane.refresh();
+    render();
+}
+
+function downloadSVG() {
+    const svg = exportSVG();
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = `cathedral_${params.style}_${params.seed}.svg`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+// Build style options from STYLES object
+const styleOptions = {};
+for (const [key, value] of Object.entries(STYLES)) {
+    styleOptions[value.name] = key;
+}
+
+// Tweakpane GUI
+const pane = new Pane({ title: 'Cathedral Generator' });
+
+// Level 1: Essential
+pane.addBinding(params, 'style', { options: styleOptions }).on('change', render);
+pane.addBinding(params, 'character', { min: 0, max: 1, step: 0.05, label: 'Character' }).on('change', render);
+pane.addBinding(params, 'seed', { min: 0, max: 99999, step: 1 });
+pane.addButton({ title: 'New Seed' }).on('click', randomizeSeed);
+
+// Level 2: Canvas
+const canvasFolder = pane.addFolder({ title: 'Canvas', expanded: false });
+canvasFolder.addBinding(params, 'format', {
+    options: { 'A4': 'a4', 'A4 Landscape': 'a4-landscape', 'A3': 'a3', 'Square': 'square' }
+}).on('change', render);
+canvasFolder.addBinding(params, 'margin', { min: 10, max: 100, step: 5 }).on('change', render);
+
+// Level 3: Rendering
+const renderFolder = pane.addFolder({ title: 'Rendering', expanded: false });
+renderFolder.addBinding(params, 'strokeWidth', { min: 0.5, max: 4, step: 0.1 }).on('change', render);
+renderFolder.addBinding(params, 'showWindows').on('change', render);
+renderFolder.addBinding(params, 'showOrnaments').on('change', render);
+renderFolder.addBinding(params, 'showDoors').on('change', render);
+renderFolder.addBinding(params, 'useFills', { label: 'Use Fills (occlusion)' }).on('change', render);
+
+// Level 4: Hatching
+const hatchFolder = pane.addFolder({ title: 'Hatching', expanded: false });
+hatchFolder.addBinding(params, 'hatching', { label: 'Enable' }).on('change', render);
+hatchFolder.addBinding(params, 'hatchStyle', {
+    label: 'Style',
+    options: { 'Diagonal': 'diagonal', 'Horizontal': 'horizontal', 'Vertical': 'vertical', 'Cross': 'cross', 'Random': 'random' }
+}).on('change', render);
+hatchFolder.addBinding(params, 'hatchDensity', { min: 2, max: 12, step: 0.5, label: 'Density' }).on('change', render);
+hatchFolder.addBinding(params, 'hatchAngle', { min: 0, max: 90, step: 5, label: 'Angle' }).on('change', render);
+hatchFolder.addBinding(params, 'hatchSide', {
+    label: 'Side',
+    options: { 'Left': 'left', 'Right': 'right', 'Top': 'top', 'Bottom': 'bottom', 'All': 'all' }
+}).on('change', render);
+
+// Level 5: Expert Mode
+const expertFolder = pane.addFolder({ title: 'Expert', expanded: false });
+expertFolder.addBinding(params, 'expertMode', { label: 'Enable Expert Mode' }).on('change', () => {
+    // Toggle visibility of expert controls
+    expertSilhouette.hidden = !params.expertMode;
+    expertProportions.hidden = !params.expertMode;
+    expertDetails.hidden = !params.expertMode;
+});
+
+const expertSilhouette = expertFolder.addFolder({ title: 'Silhouette', expanded: true });
+expertSilhouette.hidden = true;
+expertSilhouette.addBinding(params, 'towerProbability', { min: 0, max: 1, step: 0.1, label: 'Tower Prob.' }).on('change', render);
+expertSilhouette.addBinding(params, 'towerCount', { min: 0, max: 4, step: 1, label: 'Max Towers' }).on('change', render);
+expertSilhouette.addBinding(params, 'wingProbability', { min: 0, max: 1, step: 0.1, label: 'Wing Prob.' }).on('change', render);
+expertSilhouette.addBinding(params, 'setbackLevels', { min: 0, max: 5, step: 1, label: 'Setbacks' }).on('change', render);
+
+const expertProportions = expertFolder.addFolder({ title: 'Proportions', expanded: true });
+expertProportions.hidden = true;
+expertProportions.addBinding(params, 'aspectRatio', { min: 0.3, max: 1.2, step: 0.05, label: 'Aspect Ratio' }).on('change', render);
+expertProportions.addBinding(params, 'baseHeightRatio', { min: 0.05, max: 0.3, step: 0.01, label: 'Base Height' }).on('change', render);
+
+const expertDetails = expertFolder.addFolder({ title: 'Details', expanded: true });
+expertDetails.hidden = true;
+expertDetails.addBinding(params, 'windowDensity', { min: 0.2, max: 2, step: 0.1, label: 'Window Density' }).on('change', render);
+expertDetails.addBinding(params, 'ornamentLevel', { min: 0, max: 2, step: 0.1, label: 'Ornament Level' }).on('change', render);
+expertDetails.addBinding(params, 'chamferAmount', { min: 0, max: 0.5, step: 0.05, label: 'Chamfer' }).on('change', render);
+expertDetails.addBinding(params, 'decay', { min: 0, max: 1, step: 0.1, label: 'Decay (Ruin)' }).on('change', render);
+
+// Level 6: Debug
+const debugFolder = pane.addFolder({ title: 'Debug', expanded: false });
+debugFolder.addBinding(params, 'showBlocks').on('change', render);
+
+// Actions
+pane.addButton({ title: 'Regenerate' }).on('click', render);
+pane.addButton({ title: 'Download SVG' }).on('click', downloadSVG);
+
+// Initial render
+setTimeout(render, 100);
+</script>
+</body>
+</html>
