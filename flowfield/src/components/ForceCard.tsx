@@ -3,6 +3,7 @@ import { useFlowFieldStore } from '../store/useFlowFieldStore';
 import { MinMaxControl } from '../shared';
 import { FormulaInput } from './FormulaInput';
 import type { Force, NoiseForce, CircularForce, FormulaForce } from '../core/types';
+import { analytics } from '../core/analytics';
 
 interface ForceCardProps {
   force: Force;
@@ -53,7 +54,10 @@ export const ForceCard: React.FC<ForceCardProps> = ({ force }) => {
         <input
           type="checkbox"
           checked={force.enabled}
-          onChange={() => toggleForce(force.id)}
+          onChange={() => {
+            toggleForce(force.id);
+            analytics.toggleForce(force.type, !force.enabled);
+          }}
           style={{ margin: 0 }}
         />
 
@@ -100,7 +104,10 @@ export const ForceCard: React.FC<ForceCardProps> = ({ force }) => {
 
         {/* Delete */}
         <button
-          onClick={() => removeForce(force.id)}
+          onClick={() => {
+            removeForce(force.id);
+            analytics.removeForce(force.type);
+          }}
           style={{
             padding: '2px 6px',
             backgroundColor: 'transparent',

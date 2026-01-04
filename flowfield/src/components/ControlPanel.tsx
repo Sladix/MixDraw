@@ -5,9 +5,12 @@ import { SuperParamsPanel } from './SuperParamsPanel';
 import { ZonePanel } from './ZonePanel';
 import type { FormatType, PaletteMode, GradientDirection } from '../core/types';
 import { PALETTE_PRESETS } from '../core/types';
+import { analytics } from '../core/analytics';
 
 export const ControlPanel: React.FC = () => {
   const format = useFlowFieldStore((s) => s.format);
+  const customWidth = useFlowFieldStore((s) => s.customWidth);
+  const customHeight = useFlowFieldStore((s) => s.customHeight);
   const margin = useFlowFieldStore((s) => s.margin);
   const seed = useFlowFieldStore((s) => s.seed);
   const strokeColor = useFlowFieldStore((s) => s.strokeColor);
@@ -15,6 +18,7 @@ export const ControlPanel: React.FC = () => {
   const colorPalette = useFlowFieldStore((s) => s.colorPalette);
 
   const setFormat = useFlowFieldStore((s) => s.setFormat);
+  const setCustomDimensions = useFlowFieldStore((s) => s.setCustomDimensions);
   const setMargin = useFlowFieldStore((s) => s.setMargin);
   const setSeed = useFlowFieldStore((s) => s.setSeed);
   const randomizeSeed = useFlowFieldStore((s) => s.randomizeSeed);
@@ -33,6 +37,37 @@ export const ControlPanel: React.FC = () => {
 
   const handleRegenerate = () => {
     (window as any).__flowfield_export?.regenerate();
+    analytics.regenerate();
+  };
+
+  const handleFormatChange = (newFormat: FormatType) => {
+    setFormat(newFormat);
+    analytics.changeFormat(newFormat);
+  };
+
+  const handleSeedChange = (newSeed: number) => {
+    setSeed(newSeed);
+    analytics.changeSeed('manual');
+  };
+
+  const handleRandomizeSeed = () => {
+    randomizeSeed();
+    analytics.changeSeed('random');
+  };
+
+  const handleLineParamChange = <K extends keyof typeof lineParams>(key: K, value: typeof lineParams[K]) => {
+    setLineParam(key, value);
+    analytics.changeLineParam(key, value as number | boolean);
+  };
+
+  const handleColorModeChange = (mode: PaletteMode) => {
+    setColorPalette('mode', mode);
+    analytics.changeColorMode(mode);
+  };
+
+  const handlePresetApply = (presetName: string, colors: string[]) => {
+    applyPalettePreset(colors);
+    analytics.applyColorPreset(presetName);
   };
 
   return (
@@ -66,14 +101,44 @@ export const ControlPanel: React.FC = () => {
           <Row label="Format">
             <select
               value={format}
-              onChange={(e) => setFormat(e.target.value as FormatType)}
+              onChange={(e) => handleFormatChange(e.target.value as FormatType)}
               style={selectStyle}
             >
+              <option value="custom">Custom</option>
+              <option value="a6">A6 (297×420)</option>
+              <option value="a5">A5 (420×595)</option>
               <option value="a4">A4 (595×842)</option>
               <option value="a3">A3 (842×1190)</option>
               <option value="square">Square (800×800)</option>
             </select>
           </Row>
+
+          {format === 'custom' && (
+            <>
+              <Row label="Width">
+                <input
+                  type="number"
+                  min={100}
+                  max={4000}
+                  value={customWidth}
+                  onChange={(e) => setCustomDimensions(Number(e.target.value), customHeight)}
+                  style={{ ...inputStyle, width: '70px' }}
+                />
+                <span style={valueStyle}>px</span>
+              </Row>
+              <Row label="Height">
+                <input
+                  type="number"
+                  min={100}
+                  max={4000}
+                  value={customHeight}
+                  onChange={(e) => setCustomDimensions(customWidth, Number(e.target.value))}
+                  style={{ ...inputStyle, width: '70px' }}
+                />
+                <span style={valueStyle}>px</span>
+              </Row>
+            </>
+          )}
 
           <Row label="Margin">
             <input
@@ -92,10 +157,10 @@ export const ControlPanel: React.FC = () => {
             <input
               type="number"
               value={seed}
-              onChange={(e) => setSeed(Number(e.target.value))}
+              onChange={(e) => handleSeedChange(Number(e.target.value))}
               style={{ ...inputStyle, width: '80px' }}
             />
-            <button onClick={randomizeSeed} style={buttonStyle}>
+            <button onClick={handleRandomizeSeed} style={buttonStyle}>
               🎲
             </button>
           </Row>
@@ -110,7 +175,7 @@ export const ControlPanel: React.FC = () => {
               max={40}
               step={1}
               value={lineParams.dSep}
-              onChange={(e) => setLineParam('dSep', Number(e.target.value))}
+              onChange={(e) => handleLineParamChange('dSep', Number(e.target.value))}
               style={sliderStyle}
               title="dSep: Controls line density (grid spacing for seed points)"
             />
@@ -121,10 +186,10 @@ export const ControlPanel: React.FC = () => {
             <input
               type="range"
               min={1}
-              max={20}
+              max={40}
               step={0.5}
               value={lineParams.dTest}
-              onChange={(e) => setLineParam('dTest', Number(e.target.value))}
+              onChange={(e) => handleLineParamChange('dTest', Number(e.target.value))}
               style={sliderStyle}
               title="dTest: Minimum distance between lines (collision detection)"
             />
@@ -138,7 +203,7 @@ export const ControlPanel: React.FC = () => {
               max={8}
               step={0.5}
               value={lineParams.stepSize}
-              onChange={(e) => setLineParam('stepSize', Number(e.target.value))}
+              onChange={(e) => handleLineParamChange('stepSize', Number(e.target.value))}
               style={sliderStyle}
               title="Integration step size for tracing"
             />
@@ -152,7 +217,7 @@ export const ControlPanel: React.FC = () => {
               max={8}
               step={0.5}
               value={lineParams.strokeWidth}
-              onChange={(e) => setLineParam('strokeWidth', Number(e.target.value))}
+              onChange={(e) => handleLineParamChange('strokeWidth', Number(e.target.value))}
               style={sliderStyle}
             />
             <span style={valueStyle}>{lineParams.strokeWidth}</span>
@@ -165,7 +230,7 @@ export const ControlPanel: React.FC = () => {
               max={2000}
               step={100}
               value={lineParams.maxSteps}
-              onChange={(e) => setLineParam('maxSteps', Number(e.target.value))}
+              onChange={(e) => handleLineParamChange('maxSteps', Number(e.target.value))}
               style={sliderStyle}
               title="Maximum steps per line (higher = longer lines)"
             />
@@ -179,11 +244,35 @@ export const ControlPanel: React.FC = () => {
               max={50}
               step={5}
               value={lineParams.minLength}
-              onChange={(e) => setLineParam('minLength', Number(e.target.value))}
+              onChange={(e) => handleLineParamChange('minLength', Number(e.target.value))}
               style={sliderStyle}
               title="Minimum points for a valid streamline"
             />
             <span style={valueStyle}>{lineParams.minLength}</span>
+          </Row>
+
+          <Row label="Max Length">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '11px', color: '#ccc' }}>
+              <input
+                type="checkbox"
+                checked={lineParams.maximizeLength}
+                onChange={(e) => handleLineParamChange('maximizeLength', e.target.checked)}
+                style={{ accentColor: '#4a9eff' }}
+              />
+              Optimize for longest lines
+            </label>
+          </Row>
+
+          <Row label="Animation">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '11px', color: '#ccc' }}>
+              <input
+                type="checkbox"
+                checked={lineParams.progressiveRender}
+                onChange={(e) => handleLineParamChange('progressiveRender', e.target.checked)}
+                style={{ accentColor: '#4a9eff' }}
+              />
+              Progressive rendering
+            </label>
           </Row>
 
           <Row label="Color">
@@ -201,7 +290,7 @@ export const ControlPanel: React.FC = () => {
           <Row label="Mode">
             <select
               value={colorPalette.mode}
-              onChange={(e) => setColorPalette('mode', e.target.value as PaletteMode)}
+              onChange={(e) => handleColorModeChange(e.target.value as PaletteMode)}
               style={selectStyle}
             >
               <option value="single">Single Color</option>
@@ -217,7 +306,7 @@ export const ControlPanel: React.FC = () => {
               <select
                 onChange={(e) => {
                   const preset = PALETTE_PRESETS.find((p) => p.name === e.target.value);
-                  if (preset) applyPalettePreset(preset.colors);
+                  if (preset) handlePresetApply(preset.name, preset.colors);
                 }}
                 style={selectStyle}
                 defaultValue=""

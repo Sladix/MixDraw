@@ -2,6 +2,7 @@ import React from 'react';
 import { useFlowFieldStore } from '../store/useFlowFieldStore';
 import { ForceCard } from './ForceCard';
 import type { Force } from '../core/types';
+import { analytics } from '../core/analytics';
 
 export const ForceEditor: React.FC = () => {
   const forces = useFlowFieldStore((s) => s.forces);
@@ -12,6 +13,7 @@ export const ForceEditor: React.FC = () => {
   const handleAddForce = (type: Force['type']) => {
     addForce(type);
     setShowAddMenu(false);
+    analytics.addForce(type);
   };
 
   return (

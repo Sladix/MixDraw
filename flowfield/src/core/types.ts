@@ -4,7 +4,7 @@ import type { MinMaxValue } from '@mixdraw/types';
 // Canvas & Format
 // ============================================================================
 
-export type FormatType = 'a4' | 'a3' | 'square' | 'custom';
+export type FormatType = 'a6' | 'a5' | 'a4' | 'a3' | 'square' | 'custom';
 
 export interface FormatDimensions {
   width: number;
@@ -12,6 +12,8 @@ export interface FormatDimensions {
 }
 
 export const FORMATS: Record<FormatType, FormatDimensions> = {
+  a6: { width: 297, height: 420 },
+  a5: { width: 420, height: 595 },
   a4: { width: 595, height: 842 },
   a3: { width: 842, height: 1190 },
   square: { width: 800, height: 800 },
@@ -152,6 +154,10 @@ export interface LineParams {
   strokeWidth: number;    // Line stroke width
   maxSteps: number;       // Max Length - maximum steps per streamline
   minLength: number;      // Min Segments - minimum points for a valid streamline (5-50)
+
+  // Advanced options
+  maximizeLength: boolean;  // Use optimized algorithm for longest possible lines
+  progressiveRender: boolean; // Render lines progressively as they're generated
 }
 
 export const DEFAULT_LINE_PARAMS: LineParams = {
@@ -161,6 +167,8 @@ export const DEFAULT_LINE_PARAMS: LineParams = {
   strokeWidth: 2,
   maxSteps: 800,          // Max Length - increased for longer lines
   minLength: 10,          // Min Segments (exposed in UI)
+  maximizeLength: true,   // Use V2 generator by default
+  progressiveRender: true, // Show lines as they're generated
 };
 
 // ============================================================================

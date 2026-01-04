@@ -91,6 +91,8 @@ function createDefaultFormulaForce(): FormulaForce {
 interface FlowFieldState {
   // Canvas
   format: FormatType;
+  customWidth: number;
+  customHeight: number;
   margin: number;
   seed: number;
   strokeColor: string;
@@ -113,6 +115,7 @@ interface FlowFieldState {
 
   // Actions - Canvas
   setFormat: (format: FormatType) => void;
+  setCustomDimensions: (width: number, height: number) => void;
   setMargin: (margin: number) => void;
   setSeed: (seed: number) => void;
   randomizeSeed: () => void;
@@ -149,6 +152,8 @@ interface FlowFieldState {
 export const useFlowFieldStore = create<FlowFieldState>((set) => ({
   // Initial State - Canvas
   format: 'a4',
+  customWidth: 800,
+  customHeight: 600,
   margin: 40,
   seed: Math.floor(Math.random() * 10000),
   strokeColor: '#1a1a1a',
@@ -174,6 +179,8 @@ export const useFlowFieldStore = create<FlowFieldState>((set) => ({
   // ============================================================================
 
   setFormat: (format) => set({ format }),
+
+  setCustomDimensions: (width, height) => set({ customWidth: width, customHeight: height }),
 
   setMargin: (margin) => set({ margin }),
 

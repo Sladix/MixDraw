@@ -2,6 +2,7 @@ import React from 'react';
 import { useFlowFieldStore } from '../store/useFlowFieldStore';
 import type { ZonePlacement } from '../core/types';
 import { Section, Row, sliderStyle, valueStyle, selectStyle } from './ControlPanel';
+import { analytics } from '../core/analytics';
 
 export const ZonePanel: React.FC = () => {
   const zoneParams = useFlowFieldStore((s) => s.zoneParams);
@@ -20,6 +21,8 @@ export const ZonePanel: React.FC = () => {
             if (e.target.checked) {
               regenerateZones();
             }
+            // Track zone toggle
+            analytics.toggleZones(e.target.checked);
             // Trigger canvas regenerate after zone toggle
             setTimeout(() => {
               (window as any).__flowfield_export?.regenerate();
